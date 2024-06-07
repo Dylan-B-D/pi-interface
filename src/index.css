@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:ital,wght@0,100..700;1,100..700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Custom styles
+ */
+
+/* Targeting the table component to ensure the hover effect is white */
+.mantine-Table-table {
+    --table-highlight-on-hover-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Targeting the table, rows, and cells directly to ensure all possible borders are set to white */
+.mantine-Table-table, .mantine-Table-th, .mantine-Table-td {
+    border-color: rgba(255, 255, 255, 0.05) !important;
+}

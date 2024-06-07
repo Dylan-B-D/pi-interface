@@ -1,0 +1,5 @@
+# The VITE_USERS var is just a list of allowed users with access to the Pi, and was not designed to be extended to a large number of users.
+VITE_USERS='[{"name":"user1","password":"pw1"},{"name":"user2","password":"pw2"},{"name":"user3","password":"pw3"}]' # JSON array of users
+VITE_PI_IP=0.0.0.0                  # IP of the Raspberry Pi
+VITE_PI_USERNAME=username           # Username of the Raspberry Pi
+VITE_PI_PASSWORD=pw                 # Password of the Raspberry Pi
