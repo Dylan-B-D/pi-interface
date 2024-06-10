@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Container, Box, Loader, ScrollArea, Table, ActionIcon } from '@mantine/core';
+import { Container, Box, Loader, ScrollArea, Table, Group, Breadcrumbs, Anchor } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { formatDate, formatFileSize } from '../utils';
-import { IoMdCloudDownload } from 'react-icons/io';
+import { IoMdCloudDownload, IoMdRefresh } from 'react-icons/io';
 import { notifications } from '@mantine/notifications';
 import { IoAlertCircle, IoCheckmarkCircle } from 'react-icons/io5';
+import { Button } from '@nextui-org/react';
 
 /**
  * User interface.
@@ -27,7 +28,7 @@ interface FileInfo {
 }
 
 /**
- * Interface page componant.
+ * Interface page component.
  * Fetches files from the Raspberry Pi and displays them.
  * 
  * @returns {JSX.Element} The rendered Interface component.
@@ -36,14 +37,17 @@ const Interface: React.FC = () => {
     const location = useLocation();                             // Get the location object
     const user = location.state?.user as User;                  // Get the user object from the location state
     const [files, setFiles] = useState<FileInfo[]>([]);         // Initialize the files state
+    const [currentPath, setCurrentPath] = useState<string[]>([]); // Initialize the current path state
     const [loading, setLoading] = useState(true);               // Initialize the loading state
     const [error, setError] = useState<string | null>(null);    // Initialize the error state
+    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // Initialize the selected files state
 
     // Fetch the files from the Raspberry Pi
-    useEffect(() => {
+    const fetchFiles = (path: string[]) => {
         if (user) {
-            // Call the Tauri command to connect to the Raspberry Pi
-            invoke<FileInfo[]>('connect_to_pi', { userName: user.name.toLowerCase() })
+            setLoading(true);
+            const fullPath = path.length === 0 ? '' : path.join('/');
+            invoke<FileInfo[]>('connect_to_pi', { userName: user.name.toLowerCase(), path: fullPath })
                 .then((files) => {
                     setFiles(files);
                     setLoading(false);
@@ -54,29 +58,63 @@ const Interface: React.FC = () => {
                     setLoading(false);
                 });
         }
-    }, [user]);                                                 // Run the effect when the user object changes  
+    };
 
-    // Handle the download of a file
-    const handleDownload = (fileName: string) => {
-        invoke('download_file', { userName: user.name.toLowerCase(), fileName })
-            .then(() => {
-                notifications.show({
-                    message: 'File downloaded successfully!',
-                    icon: <IoCheckmarkCircle />,
-                    autoClose: 5000,
-                    color: 'green'
+    useEffect(() => {
+        fetchFiles(currentPath);  // Initial fetch
+    }, [user, currentPath]);  // Run the effect when the user or current path changes
+
+    // Handle the download of selected files
+    const handleDownload = () => {
+        selectedFiles.forEach(fileName => {
+            invoke('download_file', { userName: user.name.toLowerCase(), fileName })
+                .then(() => {
+                    notifications.show({
+                        message: `File ${fileName} downloaded successfully!`,
+                        icon: <IoCheckmarkCircle />,
+                        autoClose: 5000,
+                        color: 'green'
+                    });
+                })
+                .catch(err => {
+                    console.error('Failed to download file:', err);
+                    notifications.show({
+                        message: `Failed to download file: ${err}`,
+                        icon: <IoAlertCircle />,
+                        autoClose: 5000,
+                        color: 'red'
+                    });
                 });
-            })
-            .catch(err => {
-                console.error('Failed to download file:', err);
-                notifications.show({
-                    message: `Failed to download file: ${err}`,
-                    icon: <IoAlertCircle />,
-                    autoClose: 5000,
-                    color: 'red'
-                });
-            });
-    };    
+        });
+    };
+
+    // Handle row click to select/deselect
+    const handleRowClick = (fileName: string) => {
+        setSelectedFiles(prevSelectedFiles => {
+            const newSelectedFiles = new Set(prevSelectedFiles);
+            if (newSelectedFiles.has(fileName)) {
+                newSelectedFiles.delete(fileName);
+            } else {
+                newSelectedFiles.add(fileName);
+            }
+            return newSelectedFiles;
+        });
+    };
+
+    // Handle double click to navigate into folder
+    const handleDoubleClick = (fileName: string) => {
+        const file = files.find(f => f.name === fileName);
+        if (file && file.file_type === 'Directory') {
+            setCurrentPath([...currentPath, fileName]);
+            setSelectedFiles(new Set()); // Clear the selected files
+        }
+    };
+
+    // Handle breadcrumb click to navigate to a specific path
+    const handleBreadcrumbClick = (index: number) => {
+        setCurrentPath(currentPath.slice(0, index + 1));
+        setSelectedFiles(new Set()); // Clear the selected files
+    };
 
     return (
         <Container
@@ -96,6 +134,38 @@ const Interface: React.FC = () => {
                     flexDirection: 'column',
                 }}
             >
+                <Group mb="md" gap={4}>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        isIconOnly
+                        onClick={() => fetchFiles(currentPath)}
+                    >
+                        <IoMdRefresh size={22} />
+                    </Button>
+                    <Button
+                        size='sm'
+                        isDisabled={selectedFiles.size == 0}
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleDownload}
+                        disabled={selectedFiles.size === 0}
+                    >
+                        Download Selected
+                        <IoMdCloudDownload size={22} style={{ marginLeft: '4px' }} />
+                    </Button>
+                </Group>
+                <Breadcrumbs style={{marginBottom: '4px'}}>
+                    <Anchor onClick={() => handleBreadcrumbClick(-1)}>{user.name}</Anchor>
+                    {currentPath.map((folder, index) => (
+                        <Anchor key={index} onClick={() => handleBreadcrumbClick(index)}>
+                            {folder}
+                        </Anchor>
+                    ))}
+                </Breadcrumbs>
                 {loading ? (
                     <Loader color="blue" type="dots" size={30} />
                 ) : error ? (
@@ -103,19 +173,18 @@ const Interface: React.FC = () => {
                         <p>Error: {error}</p>
                     </Box>
                 ) : (
-                    <ScrollArea style={{ height: 'calc(100vh - 48px - 2rem)' }}>
+                    <ScrollArea>
                         <Table.ScrollContainer minWidth={450} type="native">
                             <Table highlightOnHover withTableBorder withColumnBorders withRowBorders={false}>
-                                <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                                <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, userSelect: 'none', webkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     <Table.Tr>
                                         <Table.Th style={{ color: 'white' }}>File Name</Table.Th>
                                         <Table.Th style={{ color: 'white' }}>File Type</Table.Th>
                                         <Table.Th style={{ color: 'white' }}>File Size</Table.Th>
                                         <Table.Th style={{ color: 'white' }}>Last Modified</Table.Th>
-                                        <Table.Th></Table.Th>
                                     </Table.Tr>
                                 </Table.Thead>
-                                <Table.Tbody>
+                                <Table.Tbody style={{ userSelect: 'none', webkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     {files.map(file => {
 
                                         // Remove the extension from the file name
@@ -123,16 +192,19 @@ const Interface: React.FC = () => {
                                         const displayName = file.file_type !== 'Directory' ? name : file.name;
 
                                         return (
-                                            <Table.Tr key={file.name}>
+                                            <Table.Tr
+                                                key={file.name}
+                                                onClick={() => handleRowClick(file.name)}
+                                                onDoubleClick={() => handleDoubleClick(file.name)}
+                                                style={{
+                                                    backgroundColor: selectedFiles.has(file.name) ? '#2C5364' : 'transparent',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
                                                 <Table.Td style={{ color: 'white' }}>{displayName}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{file.file_type}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{formatFileSize(file.size)}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{formatDate(Number(file.last_modified))}</Table.Td>
-                                                <Table.Td style={{ display: 'flex', justifyContent: 'center' }}>
-                                                    <ActionIcon variant="subtle" color="#64F2BE" size="xs" onClick={() => handleDownload(file.name)}>
-                                                        <IoMdCloudDownload size={24} />
-                                                    </ActionIcon>
-                                                </Table.Td>
                                             </Table.Tr>
                                         );
                                     })}

@@ -17,13 +17,12 @@ pub struct FileInfo {
 //                              Commands for SSH connection
 //================================================================================================
 
-/// Command called by the frontend to connect to the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
 /// 
-/// * `Input`: User's name
-/// * `Output`: List of files in the user's directory on the Raspberry Pi
+/// * `Input`: User's name and optional path
+/// * `Output`: List of files in the specified directory on the Raspberry Pi
 #[command]
-pub async fn connect_to_pi(user_name: String) -> Result<Vec<FileInfo>, String> {
+pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Vec<FileInfo>, String> {
     dotenv::dotenv().ok();
 
     let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
@@ -34,10 +33,19 @@ pub async fn connect_to_pi(user_name: String) -> Result<Vec<FileInfo>, String> {
     let home_dir = get_home_directory(&mut session)?;
     let base_dir = verify_base_directory(&mut session, &home_dir)?;
     let remote_dir = create_user_directory(&mut session, &base_dir, &user_name)?;
-    let files = list_files_in_directory(&mut session, &remote_dir)?;
+
+    let target_dir = if let Some(path) = path {
+        format!("{}/{}", remote_dir, path)
+    } else {
+        remote_dir
+    };
+
+    let files = list_files_in_directory(&mut session, &target_dir)?;
 
     Ok(files)
 }
+
+
 
 /// Command called by the frontend to download a file from the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
