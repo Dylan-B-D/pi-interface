@@ -4,6 +4,7 @@ use serde::Serialize;
 use ssh2::Session;
 use tauri::{api::path::download_dir, command};
 use zip::{write::FileOptions, ZipWriter};
+use chrono::Utc;
 
 /// Struct to represent a file on the Raspberry Pi.
 #[derive(Debug, Serialize)]
@@ -49,6 +50,7 @@ pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Ve
 
 
 /// Command called by the frontend to download files from the Raspberry Pi.
+/// Command called by the frontend to download files from the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
 /// Downloads the file to the user's Downloads directory in chunks to prevent memory issues.
 /// 
@@ -72,12 +74,22 @@ pub async fn download_files(user_name: String, current_path: Vec<String>, file_n
         format!("{}/{}", remote_dir, current_path.join("/"))
     };
 
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+
     if file_names.len() == 1 {
-        // Download single file directly
         let file_name = &file_names[0];
         let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
-        let local_file_path = download_single_file(&mut session, &remote_file_path)?;
-        println!("File downloaded to: {}", local_file_path.display());
+        let file_stat = sftp.stat(Path::new(&remote_file_path))
+            .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
+
+        if file_stat.is_file() {
+            // Download single file directly
+            let local_file_path = download_single_file(&mut session, &remote_file_path)?;
+            println!("File downloaded to: {}", local_file_path.display());
+        } else if file_stat.is_dir() {
+            // Download single directory as zip
+            download_files_as_zip(&mut session, &current_remote_dir, vec![file_name.clone()])?;
+        }
     } else {
         // Download multiple files as zip
         download_files_as_zip(&mut session, &current_remote_dir, file_names)?;
@@ -85,6 +97,7 @@ pub async fn download_files(user_name: String, current_path: Vec<String>, file_n
 
     Ok(())
 }
+
 
 
 //================================================================================================
@@ -225,30 +238,77 @@ fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Ve
 
     for file_name in file_names {
         let remote_file_path = format!("{}/{}", remote_dir, file_name);
-        let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
-            .open(Path::new(&remote_file_path))
-            .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
+        let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+        let file_stat = sftp.stat(Path::new(&remote_file_path))
+            .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
 
-        zip.start_file::<String, (), String>(file_name, FileOptions::default())
-            .map_err(|e| format!("Failed to add file to zip: {}", e))?;
-
-        let mut buffer = [0; 1024]; // Buffer for holding file chunks
-        while let Ok(n) = remote_file.read(&mut buffer) {
-            if n == 0 {
-                break;
-            }
-            zip.write_all(&buffer[..n])
-                .map_err(|e| format!("Failed to write to zip: {}", e))?;
+        if file_stat.is_file() {
+            add_file_to_zip(session, &mut zip, &remote_file_path, &file_name)?;
+        } else if file_stat.is_dir() {
+            add_directory_to_zip(session, &mut zip, &remote_file_path, &file_name)?;
         }
     }
 
     zip.finish().map_err(|e| format!("Failed to finalize zip file: {}", e))?;
 
     let downloads_dir = download_dir().ok_or("Failed to find the Downloads directory")?;
-    let local_zip_path = downloads_dir.join("downloaded_files.zip");
+
+    let now = Utc::now();
+    let filename = format!("downloaded_files_{}.zip", now.format("%Y%m%d%H%M%S"));
+
+    let local_zip_path = downloads_dir.join(filename);
     fs::rename(zip_path, &local_zip_path).map_err(|e| format!("Failed to move zip file to Downloads: {}", e))?;
 
     tmp_dir.close().map_err(|e| format!("Failed to clean up temporary files: {}", e))?;
     
+    Ok(())
+}
+
+/// Adds a file to the zip archive.
+/// 
+/// * `Input`: SSH session, zip writer, remote file path, and file name
+/// * `Output`: None
+fn add_file_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_file_path: &str, file_name: &str) -> Result<(), String> {
+    let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
+        .open(Path::new(remote_file_path))
+        .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
+
+    zip.start_file::<&str, (), &str>(file_name, FileOptions::default())
+        .map_err(|e| format!("Failed to add file to zip: {}", e))?;
+
+    let mut buffer = [0; 1024]; // Buffer for holding file chunks
+    while let Ok(n) = remote_file.read(&mut buffer) {
+        if n == 0 {
+            break;
+        }
+        zip.write_all(&buffer[..n])
+            .map_err(|e| format!("Failed to write to zip: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Adds a directory and its contents to the zip archive.
+/// 
+/// * `Input`: SSH session, zip writer, remote directory path, and directory name
+/// * `Output`: None
+fn add_directory_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_dir_path: &str, dir_name: &str) -> Result<(), String> {
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let entries = sftp.readdir(Path::new(remote_dir_path))
+        .map_err(|e| format!("Failed to read directory '{}': {}", remote_dir_path, e))?;
+
+    for (path, stat) in entries {
+        let file_name = path.file_name().ok_or_else(|| format!("Failed to get file name in directory '{}'", remote_dir_path))?
+            .to_string_lossy().to_string();
+        let full_remote_path = format!("{}/{}", remote_dir_path, file_name);
+        let zip_file_name = format!("{}/{}", dir_name, file_name);
+
+        if stat.is_file() {
+            add_file_to_zip(session, zip, &full_remote_path, &zip_file_name)?;
+        } else if stat.is_dir() {
+            add_directory_to_zip(session, zip, &full_remote_path, &zip_file_name)?;
+        }
+    }
+
     Ok(())
 }
