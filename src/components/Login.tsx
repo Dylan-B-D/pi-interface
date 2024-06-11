@@ -2,22 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { TextInput, SegmentedControl, Container, Title, Center } from '@mantine/core';
 import { Button, Card, CardBody } from '@nextui-org/react';
 import { IoEnter } from "react-icons/io5";
-
-/**
- * Interface for the User object.
- */
-interface User {
-    name: string;
-    password: string;
-}
-
-/**
- * Props for the Login component.
- */
-interface LoginProps {
-    users: User[];
-    onLogin: (user: User) => void;
-}
+import { LoginProps } from '../interfaces';
 
 /**
  * Login component for the application.

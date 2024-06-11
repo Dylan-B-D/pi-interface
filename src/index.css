@@ -5,14 +5,32 @@
 
 /**
  * Custom styles
- */
-
-/* Targeting the table component to ensure the hover effect is white */
-.mantine-Table-table {
-    --table-highlight-on-hover-color: rgba(255, 255, 255, 0.05);
-}
+*/
 
 /* Targeting the table, rows, and cells directly to ensure all possible borders are set to white */
 .mantine-Table-table, .mantine-Table-th, .mantine-Table-td {
     border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.mantine-Table-th {
+    background-color: #112128 !important;
+    border: none !important;
+}
+
+.mantine-Table-td {
+    background-color: rgba(255,255,255,0.05);
+}
+
+.mantine-Table-tr {
+    transition: background-color 0.25s ease-in-out !important;
+}
+
+.mantine-Table-tr:hover {
+    background-color: rgba(255,255,255,0.075) !important;
+}
+.mantine-Table-tr.selected {
+    background-color: #429a84;
+}
+.mantine-Table-tr.selected:hover {
+    background-color: #50c29a !important;
 }

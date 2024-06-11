@@ -3,29 +3,12 @@ import { useLocation } from 'react-router-dom';
 import { Container, Box, Loader, ScrollArea, Table, Group, Breadcrumbs, Anchor } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
-import { formatDate, formatFileSize } from '../utils';
+import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
 import { IoMdCloudDownload, IoMdRefresh } from 'react-icons/io';
 import { notifications } from '@mantine/notifications';
 import { IoAlertCircle, IoCheckmarkCircle } from 'react-icons/io5';
 import { Button } from '@nextui-org/react';
-
-/**
- * User interface.
- */
-interface User {
-    name: string;
-    password: string;
-}
-
-/**
- * FileInfo interface.
- */
-interface FileInfo {
-    name: string;
-    file_type: string;
-    size: number;
-    last_modified: string;
-}
+import { FileInfo, User } from '../interfaces';
 
 /**
  * Interface page component.
@@ -43,27 +26,14 @@ const Interface: React.FC = () => {
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // Initialize the selected files state
 
     // Fetch the files from the Raspberry Pi
-    const fetchFiles = useCallback((path: string[]) => {
-        if (user) {
-            setLoading(true);
-            const fullPath = path.length === 0 ? '' : path.join('/');
-            invoke<FileInfo[]>('connect_to_pi', { userName: user.name.toLowerCase(), path: fullPath })
-                .then((files) => {
-                    setFiles(files);
-                    setLoading(false);
-                })
-                .catch(err => {
-                    console.error('Failed to connect to the Raspberry Pi:', err);
-                    setError(err);
-                    setLoading(false);
-                });
-        }
+    const fetchFilesCallback = useCallback((path: string[]) => {
+        fetchFiles(user, path, setFiles, setLoading, setError);
     }, [user]);
 
     
     useEffect(() => {
-        fetchFiles(currentPath);  // Initial fetch
-    }, [user, currentPath, fetchFiles]);  // Run the effect when the user, current path, or fetchFiles changes
+        fetchFilesCallback(currentPath);  // Initial fetch
+    }, [user, currentPath, fetchFilesCallback]);
 
     // Handle the download of selected files
     const handleDownload = () => {
@@ -142,7 +112,7 @@ const Interface: React.FC = () => {
                         variant='flat'
                         radius='none'
                         isIconOnly
-                        onClick={() => fetchFiles(currentPath)}
+                        onClick={() => fetchFilesCallback(currentPath)}
                     >
                         <IoMdRefresh size={22} />
                     </Button>
@@ -176,36 +146,37 @@ const Interface: React.FC = () => {
                 ) : (
                     <ScrollArea>
                         <Table.ScrollContainer minWidth={450} type="native">
-                            <Table highlightOnHover withTableBorder withColumnBorders withRowBorders={false}>
+                            <Table highlightOnHover withColumnBorders withRowBorders={false}>
                                 <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     <Table.Tr>
-                                        <Table.Th style={{ color: 'white' }}>File Name</Table.Th>
-                                        <Table.Th style={{ color: 'white' }}>File Type</Table.Th>
-                                        <Table.Th style={{ color: 'white' }}>File Size</Table.Th>
-                                        <Table.Th style={{ color: 'white' }}>Last Modified</Table.Th>
+                                        <Table.Th style={{ color: 'white' }}>Name</Table.Th>
+                                        <Table.Th style={{ color: 'white' }}>Date Modified</Table.Th>
+                                        <Table.Th style={{ color: 'white' }}>Type</Table.Th>
+                                        <Table.Th style={{ color: 'white' }}>Size</Table.Th>
                                     </Table.Tr>
                                 </Table.Thead>
                                 <Table.Tbody style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     {files.map(file => {
 
                                         // Remove the extension from the file name
-                                        const [name] = file.name.split('.');
-                                        const displayName = file.file_type !== 'Directory' ? name : file.name;
+                                        const [name, extension] = file.name.split('.');
+                                        const icon = file.file_type !== 'Directory' ? getIconByFileExtension(extension) : '📁';
+                                        const displayName = `${icon} ${name}`;
 
                                         return (
                                             <Table.Tr
+                                                className={`table-row ${selectedFiles.has(file.name) ? 'selected' : ''}`}
                                                 key={file.name}
                                                 onClick={() => handleRowClick(file.name)}
                                                 onDoubleClick={() => handleDoubleClick(file.name)}
                                                 style={{
-                                                    backgroundColor: selectedFiles.has(file.name) ? '#2C5364' : 'transparent',
                                                     cursor: 'pointer'
                                                 }}
                                             >
                                                 <Table.Td style={{ color: 'white' }}>{displayName}</Table.Td>
+                                                <Table.Td style={{ color: 'white' }}>{formatDate(Number(file.last_modified))}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{file.file_type}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{formatFileSize(file.size)}</Table.Td>
-                                                <Table.Td style={{ color: 'white' }}>{formatDate(Number(file.last_modified))}</Table.Td>
                                             </Table.Tr>
                                         );
                                     })}

@@ -2,15 +2,7 @@ import { Box, Title } from "@mantine/core";
 import { Button } from "@nextui-org/react";
 import { IoExit } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
-
-/**
- * Props for the InterfaceHeader component.
- */
-interface InterfaceHeaderProps {
-    user: {
-        name: string;
-    } | null;
-}
+import { InterfaceHeaderProps } from "../interfaces";
 
 /**
  * Header component for the interface.

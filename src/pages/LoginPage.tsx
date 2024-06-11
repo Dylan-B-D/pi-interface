@@ -1,14 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Login from '../components/Login';
-
-/**
- * User interface.
- */
-interface User {
-    name: string;
-    password: string;
-}
+import { User } from '../interfaces';
 
 /**
  * Login page component.
