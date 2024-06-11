@@ -48,14 +48,14 @@ pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Ve
 
 
 
-/// Command called by the frontend to download a file from the Raspberry Pi.
+/// Command called by the frontend to download files from the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
 /// Downloads the file to the user's Downloads directory in chunks to prevent memory issues.
 /// 
-/// * `Input`: User's name and file name
+/// * `Input`: User's name, current path, and file names
 /// * `Output`: None
 #[command]
-pub async fn download_files(user_name: String, file_names: Vec<String>) -> Result<(), String> {
+pub async fn download_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>) -> Result<(), String> {
     dotenv::dotenv().ok();
 
     // Load environment variables
@@ -66,20 +66,26 @@ pub async fn download_files(user_name: String, file_names: Vec<String>) -> Resul
     let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
     let home_dir = get_home_directory(&mut session)?;
     let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
     if file_names.len() == 1 {
         // Download single file directly
         let file_name = &file_names[0];
-        let remote_file_path = format!("{}/{}", remote_dir, file_name);
+        let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
         let local_file_path = download_single_file(&mut session, &remote_file_path)?;
         println!("File downloaded to: {}", local_file_path.display());
     } else {
         // Download multiple files as zip
-        download_files_as_zip(&mut session, &remote_dir, file_names)?;
+        download_files_as_zip(&mut session, &current_remote_dir, file_names)?;
     }
 
     Ok(())
 }
+
 
 //================================================================================================
 //                              Helper functions for SSH connection
@@ -191,13 +197,21 @@ fn download_single_file(session: &mut Session, remote_file_path: &str) -> Result
     let mut local_file = File::create(&local_file_path)
         .map_err(|e| format!("Failed to create local file at '{}': {}", local_file_path.display(), e))?;
 
-    let mut buffer = Vec::new();
-    remote_file.read_to_end(&mut buffer).map_err(|e| format!("Failed to read remote file '{}': {}", remote_file_path, e))?;
-    local_file.write_all(&buffer)
-        .map_err(|e| format!("Failed to write to local file at '{}': {}", local_file_path.display(), e))?;
+    let mut buffer = [0; 1024]; // Buffer for holding file chunks
+    while let Ok(n) = remote_file.read(&mut buffer) {
+        if n == 0 {
+            break;
+        }
+        local_file.write_all(&buffer[..n])
+            .map_err(|e| format!("Failed to write to local file at '{}': {}", local_file_path.display(), e))?;
+    }
+
+    remote_file.close().map_err(|e| format!("Failed to close remote file '{}': {}", remote_file_path, e))?;
+    local_file.flush().map_err(|e| format!("Failed to flush local file at '{}': {}", local_file_path.display(), e))?;
 
     Ok(local_file_path)
 }
+
 
 /// Downloads multiple files from the Raspberry Pi as a zip file.
 /// 
@@ -215,12 +229,17 @@ fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Ve
             .open(Path::new(&remote_file_path))
             .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
 
-        let mut buffer = Vec::new();
-        remote_file.read_to_end(&mut buffer).map_err(|e| format!("Failed to read remote file '{}': {}", remote_file_path, e))?;
         zip.start_file::<String, (), String>(file_name, FileOptions::default())
             .map_err(|e| format!("Failed to add file to zip: {}", e))?;
-        zip.write_all(&buffer)
-            .map_err(|e| format!("Failed to write to zip: {}", e))?;
+
+        let mut buffer = [0; 1024]; // Buffer for holding file chunks
+        while let Ok(n) = remote_file.read(&mut buffer) {
+            if n == 0 {
+                break;
+            }
+            zip.write_all(&buffer[..n])
+                .map_err(|e| format!("Failed to write to zip: {}", e))?;
+        }
     }
 
     zip.finish().map_err(|e| format!("Failed to finalize zip file: {}", e))?;

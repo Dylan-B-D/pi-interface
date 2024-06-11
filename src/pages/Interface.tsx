@@ -16,7 +16,7 @@ import { FileInfo, User } from '../interfaces';
  * 
  * @returns {JSX.Element} The rendered Interface component.
  */
-const Interface: React.FC = () => {
+const Interface: React.FC = (): JSX.Element => {
     const location = useLocation();                             // Get the location object
     const user = location.state?.user as User;                  // Get the user object from the location state
     const [files, setFiles] = useState<FileInfo[]>([]);         // Initialize the files state
@@ -38,7 +38,7 @@ const Interface: React.FC = () => {
     // Handle the download of selected files
     const handleDownload = () => {
         const fileNames = Array.from(selectedFiles);
-        invoke('download_files', { userName: user.name.toLowerCase(), fileNames })
+        invoke('download_files', { userName: user.name.toLowerCase(), currentPath, fileNames })
             .then(() => {
                 notifications.show({
                     message: `Files downloaded successfully!`,
@@ -56,7 +56,7 @@ const Interface: React.FC = () => {
                     color: 'red'
                 });
             });
-    };
+    };    
 
     // Handle row click to select/deselect
     const handleRowClick = (fileName: string) => {

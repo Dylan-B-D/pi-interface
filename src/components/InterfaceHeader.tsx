@@ -10,7 +10,7 @@ import { InterfaceHeaderProps } from "../interfaces";
  * @param {InterfaceHeaderProps} props - Props incluidng the user object.
  * @returns {JSX.Element} The rendered InterfaceHeader component.
  */
-const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user }) => {
+const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user }: InterfaceHeaderProps): JSX.Element => {
     const navigate = useNavigate();
 
     return (
