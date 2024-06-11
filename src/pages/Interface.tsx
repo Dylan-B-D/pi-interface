@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Container, Box, Loader, ScrollArea, Table, Group, Breadcrumbs, Anchor } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
@@ -43,7 +43,7 @@ const Interface: React.FC = () => {
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // Initialize the selected files state
 
     // Fetch the files from the Raspberry Pi
-    const fetchFiles = (path: string[]) => {
+    const fetchFiles = useCallback((path: string[]) => {
         if (user) {
             setLoading(true);
             const fullPath = path.length === 0 ? '' : path.join('/');
@@ -58,11 +58,12 @@ const Interface: React.FC = () => {
                     setLoading(false);
                 });
         }
-    };
+    }, [user]);
 
+    
     useEffect(() => {
         fetchFiles(currentPath);  // Initial fetch
-    }, [user, currentPath]);  // Run the effect when the user or current path changes
+    }, [user, currentPath, fetchFiles]);  // Run the effect when the user, current path, or fetchFiles changes
 
     // Handle the download of selected files
     const handleDownload = () => {
@@ -176,7 +177,7 @@ const Interface: React.FC = () => {
                     <ScrollArea>
                         <Table.ScrollContainer minWidth={450} type="native">
                             <Table highlightOnHover withTableBorder withColumnBorders withRowBorders={false}>
-                                <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, userSelect: 'none', webkitUserSelect: 'none', MozUserSelect: 'none' }}>
+                                <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     <Table.Tr>
                                         <Table.Th style={{ color: 'white' }}>File Name</Table.Th>
                                         <Table.Th style={{ color: 'white' }}>File Type</Table.Th>
@@ -184,7 +185,7 @@ const Interface: React.FC = () => {
                                         <Table.Th style={{ color: 'white' }}>Last Modified</Table.Th>
                                     </Table.Tr>
                                 </Table.Thead>
-                                <Table.Tbody style={{ userSelect: 'none', webkitUserSelect: 'none', MozUserSelect: 'none' }}>
+                                <Table.Tbody style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}>
                                     {files.map(file => {
 
                                         // Remove the extension from the file name

@@ -3,20 +3,33 @@ import { TextInput, SegmentedControl, Container, Title, Center } from '@mantine/
 import { Button, Card, CardBody } from '@nextui-org/react';
 import { IoEnter } from "react-icons/io5";
 
+/**
+ * Interface for the User object.
+ */
 interface User {
     name: string;
     password: string;
 }
 
+/**
+ * Props for the Login component.
+ */
 interface LoginProps {
     users: User[];
     onLogin: (user: User) => void;
 }
 
-const Login: React.FC<LoginProps> = ({ users, onLogin }) => {
+/**
+ * Login component for the application.
+ * 
+ * @param {LoginProps} props - Props including the users and the onLogin function.
+ * @returns {JSX.Element} The rendered Login component.
+ */
+const Login: React.FC<LoginProps> = ({ users, onLogin }: LoginProps): JSX.Element => {
     const [selectedUser, setSelectedUser] = useState<string | undefined>(undefined);
     const [password, setPassword] = useState('');
 
+    // Function to handle the login
     const handleLogin = () => {
         const user = users.find(user => user.name === selectedUser);
         if (user && user.password === password) {
@@ -26,12 +39,14 @@ const Login: React.FC<LoginProps> = ({ users, onLogin }) => {
         }
     };
 
+    // Login on Enter key press
     const handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter') {
             handleLogin();
         }
     };
 
+    // Try to login on password change
     useEffect(() => {
         const user = users.find(user => user.name === selectedUser);
         if (user && user.password === password) {
@@ -64,7 +79,7 @@ const Login: React.FC<LoginProps> = ({ users, onLogin }) => {
                 <CardBody>
                     <Center>
                         <Title order={2} mb="8px">
-                            Please login to continue
+                            Login
                         </Title>
                     </Center>
                     <SegmentedControl
