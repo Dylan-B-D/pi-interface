@@ -9,7 +9,7 @@ import { User } from '../interfaces';
  * 
  * @returns {JSX.Element} The rendered LoginPage component.
  */
-const LoginPage: React.FC = () => {
+const LoginPage: React.FC = (): JSX.Element => {
     const [users, setUsers] = useState<User[]>([]);
     const navigate = useNavigate();
 

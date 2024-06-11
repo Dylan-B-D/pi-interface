@@ -37,26 +37,25 @@ const Interface: React.FC = () => {
 
     // Handle the download of selected files
     const handleDownload = () => {
-        selectedFiles.forEach(fileName => {
-            invoke('download_file', { userName: user.name.toLowerCase(), fileName })
-                .then(() => {
-                    notifications.show({
-                        message: `File ${fileName} downloaded successfully!`,
-                        icon: <IoCheckmarkCircle />,
-                        autoClose: 5000,
-                        color: 'green'
-                    });
-                })
-                .catch(err => {
-                    console.error('Failed to download file:', err);
-                    notifications.show({
-                        message: `Failed to download file: ${err}`,
-                        icon: <IoAlertCircle />,
-                        autoClose: 5000,
-                        color: 'red'
-                    });
+        const fileNames = Array.from(selectedFiles);
+        invoke('download_files', { userName: user.name.toLowerCase(), fileNames })
+            .then(() => {
+                notifications.show({
+                    message: `Files downloaded successfully!`,
+                    icon: <IoCheckmarkCircle />,
+                    autoClose: 5000,
+                    color: 'green'
                 });
-        });
+            })
+            .catch(err => {
+                console.error('Failed to download files:', err);
+                notifications.show({
+                    message: `Failed to download files: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+            });
     };
 
     // Handle row click to select/deselect

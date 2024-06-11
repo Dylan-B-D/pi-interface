@@ -1,8 +1,9 @@
-use std::{env, fs::File, io::{Read, Write}, net::TcpStream, path::Path};
+use std::{env, fs::{self, File}, io::{Read, Write}, net::TcpStream, path::{Path, PathBuf}};
 
 use serde::Serialize;
 use ssh2::Session;
 use tauri::{api::path::download_dir, command};
+use zip::{write::FileOptions, ZipWriter};
 
 /// Struct to represent a file on the Raspberry Pi.
 #[derive(Debug, Serialize)]
@@ -54,9 +55,10 @@ pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Ve
 /// * `Input`: User's name and file name
 /// * `Output`: None
 #[command]
-pub async fn download_file(user_name: String, file_name: String) -> Result<(), String> {
+pub async fn download_files(user_name: String, file_names: Vec<String>) -> Result<(), String> {
     dotenv::dotenv().ok();
-    
+
+    // Load environment variables
     let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
     let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
     let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
@@ -64,28 +66,17 @@ pub async fn download_file(user_name: String, file_name: String) -> Result<(), S
     let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
     let home_dir = get_home_directory(&mut session)?;
     let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let remote_file_path = format!("{}/{}", remote_dir, file_name);
-
-    let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
-        .open(Path::new(&remote_file_path))
-        .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
-
-    let downloads_dir = download_dir().ok_or("Failed to find the Downloads directory")?;
-    let local_file_path = downloads_dir.join(file_name);
-    let mut local_file = File::create(&local_file_path)
-        .map_err(|e| format!("Failed to create local file at '{}': {}", local_file_path.display(), e))?;
-
-    let mut buffer = [0; 1024]; // Buffer for holding file chunks
-    while let Ok(n) = remote_file.read(&mut buffer) {
-        if n == 0 {
-            break;
-        }
-        local_file.write_all(&buffer[..n])
-            .map_err(|e| format!("Failed to write to local file at '{}': {}", local_file_path.display(), e))?;
+    
+    if file_names.len() == 1 {
+        // Download single file directly
+        let file_name = &file_names[0];
+        let remote_file_path = format!("{}/{}", remote_dir, file_name);
+        let local_file_path = download_single_file(&mut session, &remote_file_path)?;
+        println!("File downloaded to: {}", local_file_path.display());
+    } else {
+        // Download multiple files as zip
+        download_files_as_zip(&mut session, &remote_dir, file_names)?;
     }
-
-    remote_file.close().map_err(|e| format!("Failed to close remote file '{}': {}", remote_file_path, e))?;
-    local_file.flush().map_err(|e| format!("Failed to flush local file at '{}': {}", local_file_path.display(), e))?;
 
     Ok(())
 }
@@ -183,4 +174,62 @@ fn list_files_in_directory(session: &mut Session, remote_dir: &str) -> Result<Ve
         }
     }
     Ok(files)
+}
+
+/// Downloads a single file from the Raspberry Pi.
+/// 
+/// * `Input`: SSH session and remote file path
+/// * `Output`: Local file path
+fn download_single_file(session: &mut Session, remote_file_path: &str) -> Result<PathBuf, String> {
+    let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
+        .open(Path::new(remote_file_path))
+        .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
+
+    let downloads_dir = download_dir().ok_or("Failed to find the Downloads directory")?;
+    let local_file_path = downloads_dir.join(Path::new(remote_file_path).file_name().unwrap());
+
+    let mut local_file = File::create(&local_file_path)
+        .map_err(|e| format!("Failed to create local file at '{}': {}", local_file_path.display(), e))?;
+
+    let mut buffer = Vec::new();
+    remote_file.read_to_end(&mut buffer).map_err(|e| format!("Failed to read remote file '{}': {}", remote_file_path, e))?;
+    local_file.write_all(&buffer)
+        .map_err(|e| format!("Failed to write to local file at '{}': {}", local_file_path.display(), e))?;
+
+    Ok(local_file_path)
+}
+
+/// Downloads multiple files from the Raspberry Pi as a zip file.
+/// 
+/// * `Input`: SSH session, remote directory, and list of file names
+/// * `Output`: None
+fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Vec<String>) -> Result<(), String> {
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temporary directory: {}", e))?;
+    let zip_path = tmp_dir.path().join("files.zip");
+    let zip_file = File::create(&zip_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
+    let mut zip = ZipWriter::new(zip_file);
+
+    for file_name in file_names {
+        let remote_file_path = format!("{}/{}", remote_dir, file_name);
+        let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
+            .open(Path::new(&remote_file_path))
+            .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
+
+        let mut buffer = Vec::new();
+        remote_file.read_to_end(&mut buffer).map_err(|e| format!("Failed to read remote file '{}': {}", remote_file_path, e))?;
+        zip.start_file::<String, (), String>(file_name, FileOptions::default())
+            .map_err(|e| format!("Failed to add file to zip: {}", e))?;
+        zip.write_all(&buffer)
+            .map_err(|e| format!("Failed to write to zip: {}", e))?;
+    }
+
+    zip.finish().map_err(|e| format!("Failed to finalize zip file: {}", e))?;
+
+    let downloads_dir = download_dir().ok_or("Failed to find the Downloads directory")?;
+    let local_zip_path = downloads_dir.join("downloaded_files.zip");
+    fs::rename(zip_path, &local_zip_path).map_err(|e| format!("Failed to move zip file to Downloads: {}", e))?;
+
+    tmp_dir.close().map_err(|e| format!("Failed to clean up temporary files: {}", e))?;
+    
+    Ok(())
 }
