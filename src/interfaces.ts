@@ -29,13 +29,13 @@ export interface FileInfo {
 }
 
 /**
- * Props for the InterfaceHeader component.
+ * Props for the FileExplorerHeader component.
  * 
- * @interface InterfaceHeaderProps
+ * @interface FileExplorerHeaderProps
  * @property {{ name: string; } | null} user - The user object or null.
  * @property {number | null} storageUsed - The storage used or null.
  */
-export interface InterfaceHeaderProps {
+export interface FileExplorerHeaderProps {
     user: {
         storage_limit: number;
         name: string;

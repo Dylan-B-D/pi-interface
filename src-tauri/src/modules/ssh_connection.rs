@@ -27,13 +27,7 @@ const CHUNK_SIZE: usize = 1 * 1024 * 1024; // 1MB
 /// * `Output`: List of files in the specified directory on the Raspberry Pi
 #[command]
 pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Vec<FileInfo>, String> {
-    dotenv::dotenv().ok();
-
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-    
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let mut session = get_ssh_session().await?;
     let home_dir = get_home_directory(&mut session)?;
     let base_dir = verify_base_directory(&mut session, &home_dir)?;
     let remote_dir = create_user_directory(&mut session, &base_dir, &user_name)?;
@@ -73,21 +67,7 @@ pub async fn get_file_sizes(file_paths: Vec<String>) -> Result<Vec<u64>, String>
 /// * `Output`: None
 #[command]
 pub async fn download_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (mut session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
@@ -118,21 +98,7 @@ pub async fn download_files(user_name: String, current_path: Vec<String>, file_n
 /// * `Output`: None
 #[command]
 pub async fn upload_files(user_name: String, current_path: Vec<String>, local_file_paths: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (mut session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     for local_file_path in local_file_paths {
         let file_name = Path::new(&local_file_path).file_name().unwrap().to_str().unwrap();
@@ -148,21 +114,7 @@ pub async fn upload_files(user_name: String, current_path: Vec<String>, local_fi
 /// * `Output`: None
 #[command]
 pub async fn create_folder(user_name: String, current_path: Vec<String>, folder_name: String) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let remote_folder_path = format!("{}/{}", current_remote_dir, folder_name);
 
@@ -177,21 +129,7 @@ pub async fn create_folder(user_name: String, current_path: Vec<String>, folder_
 /// * `Output`: None
 #[command]
 pub async fn rename_file(user_name: String, current_path: Vec<String>, old_name: String, new_name: String) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let old_file_path = format!("{}/{}", current_remote_dir, old_name);
     let new_file_path = format!("{}/{}", current_remote_dir, new_name);
@@ -208,21 +146,7 @@ pub async fn rename_file(user_name: String, current_path: Vec<String>, old_name:
 /// * `Output`: None
 #[command]
 pub async fn delete_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
 
@@ -244,21 +168,7 @@ pub async fn delete_files(user_name: String, current_path: Vec<String>, file_nam
 /// * `Output`: File content as a string
 #[command]
 pub async fn read_file(user_name: String, current_path: Vec<String>, file_name: String) -> Result<String, String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
     let path = Path::new(&remote_file_path);
@@ -277,21 +187,7 @@ pub async fn read_file(user_name: String, current_path: Vec<String>, file_name: 
 /// * `Output`: None
 #[command]
 pub async fn save_file(user_name: String, current_path: Vec<String>, file_name: String, file_content: String) -> Result<(), String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
-    let home_dir = get_home_directory(&mut session)?;
-    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
-    let current_remote_dir = if current_path.is_empty() {
-        remote_dir.clone()
-    } else {
-        format!("{}/{}", remote_dir, current_path.join("/"))
-    };
+    let (session, _, current_remote_dir) = get_remote_dirs_and_session(user_name, current_path).await?;
 
     let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
     let path = Path::new(&remote_file_path);
@@ -309,19 +205,12 @@ pub async fn save_file(user_name: String, current_path: Vec<String>, file_name: 
 /// * `Output`: Storage used in bytes
 #[command]
 pub async fn get_storage_used(user_name: String) -> Result<u64, String> {
-    dotenv::dotenv().ok();
-
-    // Load environment variables
-    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
-    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
-    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
-
-    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let mut session = get_ssh_session().await?;
     let home_dir = get_home_directory(&mut session)?;
     let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
 
     let mut channel = session.channel_session().map_err(|e| format!("Failed to open channel: {}", e))?;
-    channel.exec(&format!("du -sb {}", remote_dir)).map_err(|e| format!("Failed to execute command: {}", e))?;
+    channel.exec(&format!("du -sb \"{}\"", remote_dir)).map_err(|e| format!("Failed to execute command: {}", e))?;
 
     let mut s = String::new();
     channel.read_to_string(&mut s).map_err(|e| format!("Failed to read from channel: {}", e))?;
@@ -341,6 +230,39 @@ pub async fn get_storage_used(user_name: String) -> Result<u64, String> {
 //                              Helper functions for SSH connection
 //================================================================================================
 
+/// Gets the remote directories and session for the user.
+///     
+/// * `Input`: User's name and current path
+/// * `Output`: SSH session, remote directory, and current remote directory
+pub async fn get_remote_dirs_and_session(user_name: String, current_path: Vec<String>) -> Result<(Session, String, String), String> {
+    let mut session = get_ssh_session().await?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    Ok((session, remote_dir, current_remote_dir))
+}
+
+
+/// Gets an SSH session with the Raspberry Pi.
+///     
+/// * `Output`: SSH session
+pub async fn get_ssh_session() -> Result<Session, String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+
+    Ok(session)
+}
 
 /// Establishes an SSH session with the Raspberry Pi.
 /// 
@@ -362,7 +284,7 @@ fn establish_ssh_session(pi_ip: String, pi_username: String, pi_password: String
             }
         }
         attempts += 1;
-        if attempts >= 3 { // Change this to the number of retries you want
+        if attempts >= 3 { // Retry 3 times before giving up
             return Err("Authentication failed".into());
         }
     }
@@ -625,6 +547,9 @@ fn upload_file_in_chunks(session: &mut Session, remote_file_path: &str, local_fi
 }
 
 /// Recursively delete a directory and its contents.
+/// 
+/// * `Input`: SFTP session and directory path
+/// * `Output`: None
 fn recursive_delete(sftp: &ssh2::Sftp, path: &Path) -> Result<(), String> {
     let entries = sftp.readdir(path).map_err(|e| format!("Failed to read directory '{}': {}", path.display(), e))?;
     for (entry_path, _) in entries {

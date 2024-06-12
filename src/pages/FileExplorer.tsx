@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput, Textarea, Space } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
-import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
 import { IoMdCloudDownload, IoMdCloudUpload, IoMdRefresh } from 'react-icons/io';
 import { notifications } from '@mantine/notifications';
@@ -12,6 +11,7 @@ import { FileInfo, User } from '../interfaces';
 import DownloadProgress from '../components/DownloadProgress';
 import { open } from '@tauri-apps/api/dialog';
 import { MdDeleteForever, MdEdit } from "react-icons/md";
+import FileExplorerHeader from '../components/FileExplorerHeader';
 
 /**
  * FileExplorer page component.
@@ -50,15 +50,10 @@ const FileExplorer: React.FC = (): JSX.Element => {
             invoke('get_storage_used', { userName: user.name.toLowerCase() })
                 .then((size: unknown) => {
                     setStorageUsed(size as number);
+                    console.log('Storage used:', size);
                 })
                 .catch(err => {
                     console.error('Failed to get storage used:', err);
-                    notifications.show({
-                        message: `Failed to get storage used: ${err}`,
-                        icon: <IoAlertCircle />,
-                        autoClose: 5000,
-                        color: 'red'
-                    });
                 });
         }
     }, [user]);
@@ -128,12 +123,7 @@ const FileExplorer: React.FC = (): JSX.Element => {
             const storageLimitInBytes = user.storage_limit * 1000 * 1000 * 1000;
 
             if (storageUsed !== null && storageLimitInBytes && (storageUsed + totalFileSize > storageLimitInBytes)) {
-                notifications.show({
-                    message: `Upload failed: Exceeds storage limit.`,
-                    icon: <IoAlertCircle />,
-                    autoClose: 5000,
-                    color: 'red'
-                });
+                console.log('Upload failed: Exceeds storage limit.');
                 return;
             }
     
@@ -377,7 +367,7 @@ const FileExplorer: React.FC = (): JSX.Element => {
             }}
         >
             {/* Header */}
-            <InterfaceHeader user={user} storageUsed={storageUsed} />
+            <FileExplorerHeader user={user} storageUsed={storageUsed} />
 
             {/* Main content */}
             <Container

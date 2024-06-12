@@ -2,16 +2,16 @@ import { Box, Title } from "@mantine/core";
 import { Button, Progress } from "@nextui-org/react";
 import { IoExit } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
-import { InterfaceHeaderProps } from "../interfaces";
+import { FileExplorerHeaderProps } from "../interfaces";
 import { formatFileSize } from "../utils";
 
 /**
- * Header component for the interface.
+ * Header component for the File Explorer.
  * 
- * @param {InterfaceHeaderProps} props - Props incluidng the user object.
- * @returns {JSX.Element} The rendered InterfaceHeader component.
+ * @param {FileExplorerHeaderProps} props - Props incluidng the user object.
+ * @returns {JSX.Element} The rendered FileExplorerHeader component.
  */
-const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user, storageUsed }: InterfaceHeaderProps): JSX.Element => {
+const FileExplorerHeader: React.FC<FileExplorerHeaderProps> = ({ user, storageUsed }: FileExplorerHeaderProps): JSX.Element => {
     const navigate = useNavigate();
 
     return (
@@ -62,4 +62,4 @@ const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user, storageUsed }: 
     );
 };
 
-export default InterfaceHeader;
+export default FileExplorerHeader;
