@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Container, Box, Loader, ScrollArea, Table, Group, Anchor, Modal, TextInput } from '@mantine/core';
+import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
@@ -363,8 +363,15 @@ const Interface: React.FC = (): JSX.Element => {
                                     </Table.Tr>
                                 </Table.Thead>
                                 <Table.Tbody style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none' }}>
-                                    {files.map(file => {
-
+                                    {files.sort((a, b) => {
+                                        if (a.file_type === 'Folder' && b.file_type !== 'Folder') {
+                                            return -1;
+                                        }
+                                        if (b.file_type === 'Folder' && a.file_type !== 'Folder') {
+                                            return 1;
+                                        }
+                                        return a.name.localeCompare(b.name);
+                                    }).map(file => {
                                         // Remove the extension from the file name
                                         const [name, extension] = file.name.split('.');
                                         const icon = file.file_type !== 'Folder' ? getIconByFileExtension(extension) : '📁';

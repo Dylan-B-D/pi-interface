@@ -40,5 +40,19 @@ export const theme = {
           },
         },
       },
+      Notifications: {
+        styles: {
+          notification: {
+            backgroundColor: 'rgba(0,0,0,0.3)',
+          },
+        },
+      },
+      Modal: {
+        styles: {
+          content: {
+            backgroundColor: '#0b1416',
+          },
+        },
+      },
     },
-  };
+};
