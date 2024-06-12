@@ -189,6 +189,42 @@ pub async fn rename_file(user_name: String, current_path: Vec<String>, old_name:
     Ok(())
 }
 
+/// Command to delete files or folders in the current directory.
+/// * `Input`: User's name, current path, file names
+/// * `Output`: None
+#[command]
+pub async fn delete_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>) -> Result<(), String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+
+    for file_name in file_names {
+        let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
+        let path = Path::new(&remote_file_path);
+        if sftp.stat(path).map_err(|e| format!("Failed to stat '{}': {}", remote_file_path, e))?.is_dir() {
+            recursive_delete(&sftp, path)?;
+        } else {
+            sftp.unlink(path).map_err(|e| format!("Failed to delete file '{}': {}", remote_file_path, e))?;
+        }
+    }
+
+    Ok(())
+}
+
 //================================================================================================
 //                              Helper functions for SSH connection
 //================================================================================================
@@ -465,5 +501,19 @@ fn upload_file_in_chunks(session: &mut Session, remote_file_path: &str, local_fi
 
     remote_file.close().map_err(|e| format!("Failed to close remote file '{}': {}", remote_file_path, e))?;
 
+    Ok(())
+}
+
+/// Recursively delete a directory and its contents.
+fn recursive_delete(sftp: &ssh2::Sftp, path: &Path) -> Result<(), String> {
+    let entries = sftp.readdir(path).map_err(|e| format!("Failed to read directory '{}': {}", path.display(), e))?;
+    for (entry_path, _) in entries {
+        if sftp.stat(&entry_path).map_err(|e| format!("Failed to stat '{}': {}", entry_path.display(), e))?.is_dir() {
+            recursive_delete(sftp, &entry_path)?;
+        } else {
+            sftp.unlink(&entry_path).map_err(|e| format!("Failed to delete file '{}': {}", entry_path.display(), e))?;
+        }
+    }
+    sftp.rmdir(path).map_err(|e| format!("Failed to delete directory '{}': {}", path.display(), e))?;
     Ok(())
 }

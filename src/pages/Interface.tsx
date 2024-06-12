@@ -33,6 +33,7 @@ const Interface: React.FC = (): JSX.Element => {
     const [newFolderName, setNewFolderName] = useState('');     // State for the new folder name
     const [isRenameOpen, setIsRenameOpen] = useState(false);    // State for handling the rename modal
     const [newFileName, setNewFileName] = useState('');         // State for the new file name
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);    // State for handling the delete confirmation modal
 
     // Fetch the files from the Raspberry Pi
     const fetchFilesCallback = useCallback((path: string[]) => {
@@ -187,6 +188,37 @@ const Interface: React.FC = (): JSX.Element => {
             });
     };
 
+    // Handle delete
+    const handleDelete = () => {
+        setIsDeleteOpen(true);
+    };
+
+    const handleConfirmDelete = () => {
+        const fileNames = Array.from(selectedFiles);
+
+        invoke('delete_files', { userName: user.name.toLowerCase(), currentPath, fileNames })
+            .then(() => {
+                notifications.show({
+                    message: `Files deleted successfully!`,
+                    icon: <IoCheckmarkCircle />,
+                    autoClose: 5000,
+                    color: 'green'
+                });
+                setIsDeleteOpen(false);
+                setSelectedFiles(new Set());
+                fetchFilesCallback(currentPath);
+            })
+            .catch(err => {
+                console.error('Failed to delete files:', err);
+                notifications.show({
+                    message: `Failed to delete files: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+            });
+    };
+
     // Handle row click to select/deselect
     const handleRowClick = (fileName: string) => {
         setSelectedFiles(prevSelectedFiles => {
@@ -293,7 +325,7 @@ const Interface: React.FC = (): JSX.Element => {
                         color="danger"
                         variant='ghost'
                         radius='none'
-                        // onClick={handleDelete}
+                        onClick={handleDelete}
                     >
                         Delete
                         <MdDeleteForever size={22} style={{ marginLeft: '4px' }} />
@@ -410,6 +442,37 @@ const Interface: React.FC = (): JSX.Element => {
                         onClick={handleRenameFile}
                     >
                         Rename
+                    </Button>
+                </Group>
+            </Modal>
+            <Modal
+                opened={isDeleteOpen}
+                onClose={() => setIsDeleteOpen(false)}
+                title="Confirm Delete"
+                centered
+                radius={0}
+            >
+                <Box>
+                    Are you sure you want to delete the selected files/folders? This action is irreversible.
+                </Box>
+                <Group mt="md">
+                    <Button
+                        size='sm'
+                        color="danger"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleConfirmDelete}
+                    >
+                        Delete
+                    </Button>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        onClick={() => setIsDeleteOpen(false)}
+                    >
+                        Cancel
                     </Button>
                 </Group>
             </Modal>
