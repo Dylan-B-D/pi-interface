@@ -16,6 +16,8 @@ fn main() {
             ssh_connection::create_folder,
             ssh_connection::rename_file,
             ssh_connection::delete_files,
+            ssh_connection::save_file,
+            ssh_connection::read_file,
             ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

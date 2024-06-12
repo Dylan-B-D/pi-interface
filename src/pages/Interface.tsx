@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput } from '@mantine/core';
+import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput, Textarea } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
@@ -34,6 +34,10 @@ const Interface: React.FC = (): JSX.Element => {
     const [isRenameOpen, setIsRenameOpen] = useState(false);    // State for handling the rename modal
     const [newFileName, setNewFileName] = useState('');         // State for the new file name
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);    // State for handling the delete confirmation modal
+    const [isFileOpen, setIsFileOpen] = useState(false);        // State for handling the file open modal
+    const [fileContent, setFileContent] = useState('');         // State for storing the file content
+    const [currentFile, setCurrentFile] = useState('');         // State for storing the current file name
+
 
     // Fetch the files from the Raspberry Pi
     const fetchFilesCallback = useCallback((path: string[]) => {
@@ -219,6 +223,62 @@ const Interface: React.FC = (): JSX.Element => {
             });
     };
 
+    // Handle opening a file or folder
+    const handleOpen = () => {
+        const selectedFile = Array.from(selectedFiles)[0];
+        const file = files.find(f => f.name === selectedFile);
+
+        if (file) {
+            if (file.file_type === 'Folder') {
+                // Navigate into the folder
+                setCurrentPath([...currentPath, file.name]);
+                setSelectedFiles(new Set()); // Clear the selected files
+            } else {
+                // Read the file content
+                setCurrentFile(file.name);
+                invoke('read_file', { userName: user.name.toLowerCase(), currentPath, fileName: file.name })
+                    .then((content: unknown) => {
+                        setFileContent(content as string);
+                        setIsFileOpen(true);
+                    })
+                    .catch(err => {
+                        console.error('Failed to read file:', err);
+                        notifications.show({
+                            message: `Failed to read file: ${err}`,
+                            icon: <IoAlertCircle />,
+                            autoClose: 5000,
+                            color: 'red'
+                        });
+                    });
+            }
+        }
+    };
+
+    const handleSaveFile = () => {
+        invoke('save_file', { userName: user.name.toLowerCase(), currentPath, fileName: currentFile, fileContent })
+            .then(() => {
+                notifications.show({
+                    message: `File saved successfully!`,
+                    icon: <IoCheckmarkCircle />,
+                    autoClose: 5000,
+                    color: 'green'
+                });
+                setIsFileOpen(false);
+                setCurrentFile('');
+                setFileContent('');
+            })
+            .catch(err => {
+                console.error('Failed to save file:', err);
+                notifications.show({
+                    message: `Failed to save file: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+            });
+    };
+
+
     // Handle row click to select/deselect
     const handleRowClick = (fileName: string) => {
         setSelectedFiles(prevSelectedFiles => {
@@ -276,6 +336,16 @@ const Interface: React.FC = (): JSX.Element => {
                         onClick={() => fetchFilesCallback(currentPath)}
                     >
                         <IoMdRefresh size={22} />
+                    </Button>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        isDisabled={selectedFiles.size !== 1}
+                        onClick={handleOpen}
+                    >
+                        Open
                     </Button>
                     <Button
                         size='sm'
@@ -480,6 +550,34 @@ const Interface: React.FC = (): JSX.Element => {
                         onClick={() => setIsDeleteOpen(false)}
                     >
                         Cancel
+                    </Button>
+                </Group>
+            </Modal>
+            <Modal
+                opened={isFileOpen}
+                onClose={() => setIsFileOpen(false)}
+                title="Edit File"
+                centered
+                size="100%"
+                radius={0}
+            >
+                <Textarea
+                    placeholder="Edit file content"
+                    value={fileContent}
+                    radius={0}
+                    onChange={(event) => setFileContent(event.currentTarget.value)}
+                    minRows={10}
+                    autosize
+                />
+                <Group mt="md">
+                    <Button
+                        size='sm'
+                        color="success"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleSaveFile}
+                    >
+                        Save
                     </Button>
                 </Group>
             </Modal>

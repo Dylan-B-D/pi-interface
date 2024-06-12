@@ -225,6 +225,71 @@ pub async fn delete_files(user_name: String, current_path: Vec<String>, file_nam
     Ok(())
 }
 
+/// Command to read the content of a file.
+/// * `Input`: User's name, current path, file name
+/// * `Output`: File content as a string
+#[command]
+pub async fn read_file(user_name: String, current_path: Vec<String>, file_name: String) -> Result<String, String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
+    let path = Path::new(&remote_file_path);
+
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let mut remote_file = sftp.open(path).map_err(|e| format!("Failed to open file '{}': {}", remote_file_path, e))?;
+
+    let mut contents = String::new();
+    remote_file.read_to_string(&mut contents).map_err(|e| format!("Failed to read file '{}': {}", remote_file_path, e))?;
+
+    Ok(contents)
+}
+
+/// Command to save the content to a file.
+/// * `Input`: User's name, current path, file name, file content
+/// * `Output`: None
+#[command]
+pub async fn save_file(user_name: String, current_path: Vec<String>, file_name: String, file_content: String) -> Result<(), String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
+    let path = Path::new(&remote_file_path);
+
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let mut remote_file = sftp.create(path).map_err(|e| format!("Failed to create file '{}': {}", remote_file_path, e))?;
+
+    remote_file.write_all(file_content.as_bytes()).map_err(|e| format!("Failed to write to file '{}': {}", remote_file_path, e))?;
+
+    Ok(())
+}
+
 //================================================================================================
 //                              Helper functions for SSH connection
 //================================================================================================

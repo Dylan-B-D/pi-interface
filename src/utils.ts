@@ -55,7 +55,7 @@ export const formatDate = (epochSeconds: number): string => {
 export const getIconByFileExtension = (extension: string): string => {
     const icons: { [key: string]: string[] } = {
         "📄": ["txt", "pdf", "json", "xml"],			// Text files
-        "🖼️": ["jpg", "png", "gif"],					// Image files
+        "🖽": ["jpg", "png", "gif"],					// Image files
         "🎵": ["mp3", "wav"],							// Audio files
         "🎥": ["mp4", "mov", "avi"],					// Video files
         "📦": ["zip", "tar", "gz"],						// Archive files
