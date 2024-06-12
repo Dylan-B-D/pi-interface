@@ -1,8 +1,9 @@
 import { Box, Title } from "@mantine/core";
-import { Button } from "@nextui-org/react";
+import { Button, Progress } from "@nextui-org/react";
 import { IoExit } from "react-icons/io5";
 import { useNavigate } from "react-router-dom";
 import { InterfaceHeaderProps } from "../interfaces";
+import { formatFileSize } from "../utils";
 
 /**
  * Header component for the interface.
@@ -10,7 +11,7 @@ import { InterfaceHeaderProps } from "../interfaces";
  * @param {InterfaceHeaderProps} props - Props incluidng the user object.
  * @returns {JSX.Element} The rendered InterfaceHeader component.
  */
-const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user }: InterfaceHeaderProps): JSX.Element => {
+const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user, storageUsed }: InterfaceHeaderProps): JSX.Element => {
     const navigate = useNavigate();
 
     return (
@@ -23,10 +24,30 @@ const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user }: InterfaceHead
                 background: '#112229',
                 position: 'sticky',
                 top: 0,
-                zIndex: 1000
+                zIndex: 1000,
+                gap: '1rem',
             }}
         >
             <Title order={4} style={{ color: 'white' }}>{user ? user.name : 'No user logged in'}</Title>
+            <>
+            {storageUsed !== null && user !== null && (
+                            <Progress
+                                aria-label={"Storage"}
+                                size="sm"
+                                classNames={{
+                                    base: "max-w-md",
+                                    track: "drop-shadow-md border border-default",
+                                    indicator: "#59c59f",
+                                    label: "text-foreground/50",
+                                    value: "tracking-wider text-foreground/50",
+                                }}
+                                label={`${formatFileSize(storageUsed)} / ${formatFileSize(user.storage_limit * 1000 * 1000 * 1000)}`}
+                                value={(storageUsed / (user.storage_limit * 1000 * 1000 * 1000)) * 100}
+                                color="primary"
+                                showValueLabel={true}
+                            />
+                        )}
+                        </>
             <Button
                 size="sm"
                 radius="none"

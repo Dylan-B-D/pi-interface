@@ -49,7 +49,21 @@ pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Ve
     Ok(files)
 }
 
+/// Command called by the frontend to get the file sizes of the specified files on the Raspberry Pi.
+/// 
+/// * `Input`: List of file paths
+/// * `Output`: List of file sizes in bytes
+#[command]
+pub async fn get_file_sizes(file_paths: Vec<String>) -> Result<Vec<u64>, String> {
+    let mut file_sizes = Vec::new();
 
+    for path in file_paths {
+        let metadata = fs::metadata(&path).map_err(|e| format!("Failed to get metadata for {}: {}", path, e))?;
+        file_sizes.push(metadata.len());
+    }
+
+    Ok(file_sizes)
+}
 
 /// Command called by the frontend to download files from the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
@@ -290,6 +304,39 @@ pub async fn save_file(user_name: String, current_path: Vec<String>, file_name: 
     Ok(())
 }
 
+/// Command to get the storage used by the user in the base remote directory.
+/// * `Input`: User's name
+/// * `Output`: Storage used in bytes
+#[command]
+pub async fn get_storage_used(user_name: String) -> Result<u64, String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+
+    let mut channel = session.channel_session().map_err(|e| format!("Failed to open channel: {}", e))?;
+    channel.exec(&format!("du -sb {}", remote_dir)).map_err(|e| format!("Failed to execute command: {}", e))?;
+
+    let mut s = String::new();
+    channel.read_to_string(&mut s).map_err(|e| format!("Failed to read from channel: {}", e))?;
+    channel.close().map_err(|e| format!("Failed to close channel: {}", e))?;
+    channel.wait_close().map_err(|e| format!("Failed to wait for channel close: {}", e))?;
+
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() < 1 {
+        return Err("Unexpected output from du command".to_string());
+    }
+
+    let size: u64 = parts[0].parse().map_err(|e| format!("Failed to parse size: {}", e))?;
+    Ok(size)
+}
+
 //================================================================================================
 //                              Helper functions for SSH connection
 //================================================================================================
@@ -300,17 +347,25 @@ pub async fn save_file(user_name: String, current_path: Vec<String>, file_name: 
 /// * `Input`: IP address, username, and password of the Raspberry Pi
 /// * `Output`: SSH session
 fn establish_ssh_session(pi_ip: String, pi_username: String, pi_password: String) -> Result<Session, String> {
-    let tcp = TcpStream::connect(format!("{}:22", pi_ip)).map_err(|e| format!("Failed to connect to {}:22: {}", pi_ip, e))?;
-    let mut session = Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
-    session.set_tcp_stream(tcp);
-    session.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
-    session.userauth_password(&pi_username, &pi_password).map_err(|e| format!("SSH authentication failed: {}", e))?;
-
-    if !session.authenticated() {
-        return Err("Authentication failed".into());
+    let mut attempts = 0;
+    loop {
+        let tcp = TcpStream::connect(format!("{}:22", pi_ip)).map_err(|e| format!("Failed to connect to {}:22: {}", pi_ip, e));
+        let session = Session::new().map_err(|e| format!("Failed to create SSH session: {}", e));
+        if let (Ok(tcp), Ok(mut session)) = (tcp, session) {
+            session.set_tcp_stream(tcp);
+            if let Ok(_) = session.handshake() {
+                if let Ok(_) = session.userauth_password(&pi_username, &pi_password) {
+                    if session.authenticated() {
+                        return Ok(session);
+                    }
+                }
+            }
+        }
+        attempts += 1;
+        if attempts >= 3 { // Change this to the number of retries you want
+            return Err("Authentication failed".into());
+        }
     }
-
-    Ok(session)
 }
 
 /// Gets the home directory of the Raspberry Pi.

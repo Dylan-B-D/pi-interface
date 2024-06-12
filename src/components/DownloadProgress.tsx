@@ -43,19 +43,19 @@ const DownloadProgress: React.FC<{ show: boolean }> = ({ show }) => {
 
     return (
         <Progress
-        aria-label={"Progress..."}
-        size="sm"
-        classNames={{
-            base: "max-w-md",
-            track: "drop-shadow-md border border-default",
-            indicator: "#59c59f",
-            label: "tracking-wider font-medium text-default-600",
-            value: "text-foreground/60",
-          }}
-        label={`Progress: ${formatFileSize(progress)} / ${formatFileSize(totalSize)}`}
-        value={percentage}
-        color="primary"
-        showValueLabel={true}
+            aria-label={"Progress..."}
+            size="sm"
+            classNames={{
+                base: "max-w-md",
+                track: "drop-shadow-md border border-default",
+                indicator: "#59c59f",
+                label: "tracking-wider font-medium text-default-600",
+                value: "text-foreground/60",
+            }}
+            label={`Progress: ${formatFileSize(progress)} / ${formatFileSize(totalSize)}`}
+            value={percentage}
+            color="primary"
+            showValueLabel={true}
         />
     );
 };

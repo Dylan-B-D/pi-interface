@@ -4,10 +4,12 @@
  * @interface User
  * @property {string} name - The user name.
  * @property {string} password - The user password.
+ * @property {number} storage_limit - The storage limit for the user.
  */
 export interface User {
     name: string;
     password: string;
+    storage_limit: number;
 }
 
 /**
@@ -31,11 +33,14 @@ export interface FileInfo {
  * 
  * @interface InterfaceHeaderProps
  * @property {{ name: string; } | null} user - The user object or null.
+ * @property {number | null} storageUsed - The storage used or null.
  */
 export interface InterfaceHeaderProps {
     user: {
+        storage_limit: number;
         name: string;
     } | null;
+    storageUsed: number | null;
 }
 
 /**

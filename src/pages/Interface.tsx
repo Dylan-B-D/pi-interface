@@ -37,13 +37,34 @@ const Interface: React.FC = (): JSX.Element => {
     const [isFileOpen, setIsFileOpen] = useState(false);        // State for handling the file open modal
     const [fileContent, setFileContent] = useState('');         // State for storing the file content
     const [currentFile, setCurrentFile] = useState('');         // State for storing the current file name
-
+    const [storageUsed, setStorageUsed] = useState<number | null>(null); // State for storing the storage used
 
     // Fetch the files from the Raspberry Pi
     const fetchFilesCallback = useCallback((path: string[]) => {
         fetchFiles(user, path, setFiles, setLoading, setError);
     }, [user]);
 
+    const updateStorageUsed = useCallback(() => {
+        if (user) {
+            invoke('get_storage_used', { userName: user.name.toLowerCase() })
+                .then((size: unknown) => {
+                    setStorageUsed(size as number);
+                })
+                .catch(err => {
+                    console.error('Failed to get storage used:', err);
+                    notifications.show({
+                        message: `Failed to get storage used: ${err}`,
+                        icon: <IoAlertCircle />,
+                        autoClose: 5000,
+                        color: 'red'
+                    });
+                });
+        }
+    }, [user]);
+    
+    useEffect(() => {
+        updateStorageUsed();
+    }, [updateStorageUsed]);
     
     useEffect(() => {
         fetchFilesCallback(currentPath);  // Initial fetch
@@ -73,17 +94,48 @@ const Interface: React.FC = (): JSX.Element => {
             });
             setIsDownloading(false);
           });
-      };   
-
-    // Handle file upload
-    const handleUpload = async () => {
+      };
+      
+      // Handle the upload of files
+      const handleUpload = async () => {
+        updateStorageUsed();
         const selectedFiles = await open({
             multiple: true,
             directory: false,
         }) as string[]; // Allow multiple file selection
-
+    
         if (selectedFiles && selectedFiles.length > 0) {
             console.log('Selected files:', selectedFiles);
+    
+            // Get the total size of the selected files from the backend
+            let totalFileSize = 0;
+            try {
+                const fileSizes = await invoke('get_file_sizes', { filePaths: selectedFiles }) as number[];
+                totalFileSize = fileSizes.reduce((total, size) => total + size, 0);
+            } catch (err) {
+                console.error('Failed to get file sizes:', err);
+                notifications.show({
+                    message: `Failed to get file sizes: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+                return;
+            }
+    
+            // Convert storage limit to bytes if it's not already
+            const storageLimitInBytes = user.storage_limit * 1000 * 1000 * 1000;
+
+            if (storageUsed !== null && storageLimitInBytes && (storageUsed + totalFileSize > storageLimitInBytes)) {
+                notifications.show({
+                    message: `Upload failed: Exceeds storage limit.`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+                return;
+            }
+    
             setIsUploading(true);
             invoke('upload_files', { userName: user.name.toLowerCase(), currentPath, localFilePaths: selectedFiles })
                 .then(() => {
@@ -95,6 +147,7 @@ const Interface: React.FC = (): JSX.Element => {
                     });
                     setIsUploading(false);
                     fetchFilesCallback(currentPath);
+                    updateStorageUsed();
                 })
                 .catch(err => {
                     console.error('Failed to upload files:', err);
@@ -107,7 +160,8 @@ const Interface: React.FC = (): JSX.Element => {
                     setIsUploading(false);
                 });
         }
-    };
+    }
+    
 
     // Handle adding a new folder
     const handleAddFolder = () => {
@@ -211,6 +265,7 @@ const Interface: React.FC = (): JSX.Element => {
                 setIsDeleteOpen(false);
                 setSelectedFiles(new Set());
                 fetchFilesCallback(currentPath);
+                updateStorageUsed();
             })
             .catch(err => {
                 console.error('Failed to delete files:', err);
@@ -266,6 +321,7 @@ const Interface: React.FC = (): JSX.Element => {
                 setIsFileOpen(false);
                 setCurrentFile('');
                 setFileContent('');
+                updateStorageUsed();
             })
             .catch(err => {
                 console.error('Failed to save file:', err);
@@ -317,7 +373,7 @@ const Interface: React.FC = (): JSX.Element => {
                 overflow: 'auto',
             }}
         >
-            <InterfaceHeader user={user} />
+            <InterfaceHeader user={user} storageUsed={storageUsed} />
             <Container
                 fluid
                 p="md"

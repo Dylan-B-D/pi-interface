@@ -18,6 +18,8 @@ fn main() {
             ssh_connection::delete_files,
             ssh_connection::save_file,
             ssh_connection::read_file,
+            ssh_connection::get_storage_used,
+            ssh_connection::get_file_sizes,
             ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
