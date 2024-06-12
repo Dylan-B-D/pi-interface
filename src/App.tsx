@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import Interface from './pages/Interface';
+import Interface from './pages/FileExplorer';
 import LoginPage from './pages/LoginPage';
 
 /**

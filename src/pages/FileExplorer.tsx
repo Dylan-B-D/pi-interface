@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput, Textarea } from '@mantine/core';
+import { Container, Box, Loader, ScrollArea, Table, Group, Modal, TextInput, Textarea, Space } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
@@ -14,12 +14,13 @@ import { open } from '@tauri-apps/api/dialog';
 import { MdDeleteForever, MdEdit } from "react-icons/md";
 
 /**
- * Interface page component.
- * Fetches files from the Raspberry Pi and displays them.
+ * FileExplorer page component.
+ * Fetches and displays files from the Raspberry Pi.
+ * Lets the user navigate through folders, upload/download files, create folders, rename files, and delete files.
  * 
- * @returns {JSX.Element} The rendered Interface component.
+ * @returns {JSX.Element} The rendered FileExplorer component.
  */
-const Interface: React.FC = (): JSX.Element => {
+const FileExplorer: React.FC = (): JSX.Element => {
     const location = useLocation();                             // Get the location object
     const user = location.state?.user as User;                  // Get the user object from the location state
     const [files, setFiles] = useState<FileInfo[]>([]);         // Initialize the files state
@@ -168,6 +169,7 @@ const Interface: React.FC = (): JSX.Element => {
         setIsAddFolderOpen(true);
     };
 
+    // Handle creating a new folder
     const handleCreateFolder = () => {
         if (newFolderName.trim() === '') {
             notifications.show({
@@ -364,6 +366,7 @@ const Interface: React.FC = (): JSX.Element => {
     };
 
     return (
+        // Background container
         <Container
             fluid
             p="0"
@@ -373,7 +376,10 @@ const Interface: React.FC = (): JSX.Element => {
                 overflow: 'auto',
             }}
         >
+            {/* Header */}
             <InterfaceHeader user={user} storageUsed={storageUsed} />
+
+            {/* Main content */}
             <Container
                 fluid
                 p="md"
@@ -382,82 +388,84 @@ const Interface: React.FC = (): JSX.Element => {
                     flexDirection: 'column',
                 }}
             >
+                {/* File Action Buttons */}
                 <Group mb="4px" gap={4}>
-                <Button
-                        size='sm'
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        isIconOnly
-                        onClick={() => fetchFilesCallback(currentPath)}
-                    >
-                        <IoMdRefresh size={22} />
-                    </Button>
                     <Button
-                        size='sm'
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        isDisabled={selectedFiles.size !== 1}
-                        onClick={handleOpen}
-                    >
-                        Open
-                    </Button>
-                    <Button
-                        size='sm'
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        onClick={handleAddFolder}
-                    >
-                        Add Folder
-                        <IoAdd size={22} style={{ marginLeft: '4px' }} />
-                    </Button>
-                    <Button
-                        size='sm'
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        isDisabled={selectedFiles.size !== 1}
-                        onClick={handleRename}
-                    >
-                        Rename
-                        <MdEdit size={22} style={{ marginLeft: '4px' }} />
-                    </Button>
-                    <Button
-                        size='sm'
-                        isDisabled={selectedFiles.size == 0}
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        onClick={handleDownload}
-                        disabled={selectedFiles.size === 0}
-                    >
-                        Download Selected
-                        <IoMdCloudDownload size={22} style={{ marginLeft: '4px' }} />
-                    </Button>
-                    <Button
-                        size='sm'
-                        color="primary"
-                        variant='flat'
-                        radius='none'
-                        onClick={handleUpload}
-                    >
-                        Upload Files
-                        <IoMdCloudUpload size={22} style={{ marginLeft: '4px' }} />
-                    </Button>
-                    <Button
-                        size='sm'
-                        color="danger"
-                        variant='ghost'
-                        radius='none'
-                        onClick={handleDelete}
-                    >
-                        Delete
-                        <MdDeleteForever size={22} style={{ marginLeft: '4px' }} />
-                    </Button>
-                    
+                            size='sm'
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            isIconOnly
+                            onClick={() => fetchFilesCallback(currentPath)}
+                        >
+                            <IoMdRefresh size={22} />
+                        </Button>
+                        <Button
+                            size='sm'
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            isDisabled={selectedFiles.size !== 1}
+                            onClick={handleOpen}
+                        >
+                            Open
+                        </Button>
+                        <Button
+                            size='sm'
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            onClick={handleAddFolder}
+                        >
+                            Add Folder
+                            <IoAdd size={22} style={{ marginLeft: '4px' }} />
+                        </Button>
+                        <Button
+                            size='sm'
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            isDisabled={selectedFiles.size !== 1}
+                            onClick={handleRename}
+                        >
+                            Rename
+                            <MdEdit size={22} style={{ marginLeft: '4px' }} />
+                        </Button>
+                        <Button
+                            size='sm'
+                            isDisabled={selectedFiles.size == 0}
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            onClick={handleDownload}
+                            disabled={selectedFiles.size === 0}
+                        >
+                            Download Selected
+                            <IoMdCloudDownload size={22} style={{ marginLeft: '4px' }} />
+                        </Button>
+                        <Button
+                            size='sm'
+                            color="primary"
+                            variant='flat'
+                            radius='none'
+                            onClick={handleUpload}
+                        >
+                            Upload Files
+                            <IoMdCloudUpload size={22} style={{ marginLeft: '4px' }} />
+                        </Button>
+                        <Button
+                            size='sm'
+                            color="danger"
+                            variant='ghost'
+                            radius='none'
+                            onClick={handleDelete}
+                        >
+                            Delete
+                            <MdDeleteForever size={22} style={{ marginLeft: '4px' }} />
+                        </Button>
                 </Group>
+
+                {/* Progress and Breadcrumbs */}
                 <Group mb="xs" gap={4}>   
                     {isUploading && <><Loader color="blue" type="dots" size={30} /></>}
                     <DownloadProgress show={isDownloading} />
@@ -470,13 +478,18 @@ const Interface: React.FC = (): JSX.Element => {
                         </BreadcrumbItem>
                     ))}
                 </Breadcrumbs>
+
+                {/* File Explorer */}
                 {loading ? (
                     <Loader color="blue" type="dots" size={30} />
                 ) : error ? (
+
+                    // Error message
                     <Box style={{ color: 'red', textAlign: 'center' }}>
                         <p>Error: {error}</p>
                     </Box>
                 ) : (
+                    // File table
                     <ScrollArea>
                         <Table.ScrollContainer minWidth={450} type="native">
                             <Table highlightOnHover withColumnBorders withRowBorders={false}>
@@ -528,6 +541,10 @@ const Interface: React.FC = (): JSX.Element => {
                     </ScrollArea>
                 )}
             </Container>
+
+            {/* --------- Modals --------- */}
+
+            {/* Add Folder Modal */}
             <Modal
                 opened={isAddFolderOpen}
                 onClose={() => setIsAddFolderOpen(false)}
@@ -535,6 +552,7 @@ const Interface: React.FC = (): JSX.Element => {
                 centered
                 radius={0}
             >
+                <Space h='md'/>
                 <TextInput
                     placeholder="Enter folder name"
                     value={newFolderName}
@@ -553,6 +571,8 @@ const Interface: React.FC = (): JSX.Element => {
                 </Button>
                 </Group>
             </Modal>
+
+            {/* Rename File Modal */}
             <Modal
                 opened={isRenameOpen}
                 onClose={() => setIsRenameOpen(false)}
@@ -560,6 +580,7 @@ const Interface: React.FC = (): JSX.Element => {
                 centered
                 radius={0}
             >
+                <Space h='md'/>
                 <TextInput
                     placeholder="Enter new name"
                     value={newFileName}
@@ -578,6 +599,8 @@ const Interface: React.FC = (): JSX.Element => {
                     </Button>
                 </Group>
             </Modal>
+
+            {/* Delete Confirmation Modal */}
             <Modal
                 opened={isDeleteOpen}
                 onClose={() => setIsDeleteOpen(false)}
@@ -609,6 +632,8 @@ const Interface: React.FC = (): JSX.Element => {
                     </Button>
                 </Group>
             </Modal>
+
+            {/* Edit File Modal */}
             <Modal
                 opened={isFileOpen}
                 onClose={() => setIsFileOpen(false)}
@@ -617,6 +642,7 @@ const Interface: React.FC = (): JSX.Element => {
                 size="100%"
                 radius={0}
             >
+                <Space h='md'/>
                 <Textarea
                     placeholder="Edit file content"
                     value={fileContent}
@@ -641,4 +667,4 @@ const Interface: React.FC = (): JSX.Element => {
     );
 };
 
-export default Interface;
+export default FileExplorer;
