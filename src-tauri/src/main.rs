@@ -11,7 +11,8 @@ fn main() {
         .invoke_handler(
           tauri::generate_handler![
             ssh_connection::connect_to_pi,
-            ssh_connection::download_files
+            ssh_connection::download_files,
+            ssh_connection::upload_files,
             ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2,7 +2,7 @@ use std::{env, fs::{self, File}, io::{Read, Write}, net::TcpStream, path::{Path,
 
 use serde::Serialize;
 use ssh2::Session;
-use tauri::{api::path::download_dir, command};
+use tauri::{api::path::download_dir, command, AppHandle, Manager};
 use zip::{write::FileOptions, ZipWriter};
 use chrono::Utc;
 
@@ -14,6 +14,8 @@ pub struct FileInfo {
     pub size: u64,
     pub last_modified: String,
 }
+
+const CHUNK_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 //================================================================================================
 //                              Commands for SSH connection
@@ -50,14 +52,13 @@ pub async fn connect_to_pi(user_name: String, path: Option<String>) -> Result<Ve
 
 
 /// Command called by the frontend to download files from the Raspberry Pi.
-/// Command called by the frontend to download files from the Raspberry Pi.
 /// Uses a .env file to load the IP address, username, and password of the Raspberry Pi.
 /// Downloads the file to the user's Downloads directory in chunks to prevent memory issues.
 /// 
-/// * `Input`: User's name, current path, and file names
+/// * `Input`: User's name, current path, file names, and app handle for emitting events
 /// * `Output`: None
 #[command]
-pub async fn download_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>) -> Result<(), String> {
+pub async fn download_files(user_name: String, current_path: Vec<String>, file_names: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
     dotenv::dotenv().ok();
 
     // Load environment variables
@@ -84,21 +85,49 @@ pub async fn download_files(user_name: String, current_path: Vec<String>, file_n
 
         if file_stat.is_file() {
             // Download single file directly
-            let local_file_path = download_single_file(&mut session, &remote_file_path)?;
+            let local_file_path = download_single_file(&mut session, &remote_file_path, &app_handle)?;
             println!("File downloaded to: {}", local_file_path.display());
         } else if file_stat.is_dir() {
             // Download single directory as zip
-            download_files_as_zip(&mut session, &current_remote_dir, vec![file_name.clone()])?;
+            download_files_as_zip(&mut session, &current_remote_dir, vec![file_name.clone()], &app_handle)?;
         }
     } else {
         // Download multiple files as zip
-        download_files_as_zip(&mut session, &current_remote_dir, file_names)?;
+        download_files_as_zip(&mut session, &current_remote_dir, file_names, &app_handle)?;
     }
 
     Ok(())
 }
 
+/// Command called by the frontend to upload files to the Raspberry Pi.
+/// * `Input`: User's name, current path, local file paths, and app handle for emitting events
+/// * `Output`: None
+#[command]
+pub async fn upload_files(user_name: String, current_path: Vec<String>, local_file_paths: Vec<String>, app_handle: AppHandle) -> Result<(), String> {
+    dotenv::dotenv().ok();
 
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    for local_file_path in local_file_paths {
+        let file_name = Path::new(&local_file_path).file_name().unwrap().to_str().unwrap();
+        let remote_file_path = format!("{}/{}", current_remote_dir, file_name);
+        upload_file_in_chunks(&mut session, &remote_file_path, Path::new(&local_file_path), &app_handle)?;
+    }
+
+    Ok(())
+}
 
 //================================================================================================
 //                              Helper functions for SSH connection
@@ -197,11 +226,16 @@ fn list_files_in_directory(session: &mut Session, remote_dir: &str) -> Result<Ve
 
 /// Downloads a single file from the Raspberry Pi.
 /// 
-/// * `Input`: SSH session and remote file path
+/// * `Input`: SSH session, remote file path, and app handle for emitting events
 /// * `Output`: Local file path
-fn download_single_file(session: &mut Session, remote_file_path: &str) -> Result<PathBuf, String> {
-    let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
-        .open(Path::new(remote_file_path))
+fn download_single_file(session: &mut Session, remote_file_path: &str, app_handle: &AppHandle) -> Result<PathBuf, String> {
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let file_stat = sftp.stat(Path::new(remote_file_path))
+        .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
+    let total_size = file_stat.size.ok_or("Failed to get file size")?;
+    app_handle.emit_all("total-size", total_size).unwrap();
+
+    let mut remote_file = sftp.open(Path::new(remote_file_path))
         .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
 
     let downloads_dir = download_dir().ok_or("Failed to find the Downloads directory")?;
@@ -210,13 +244,17 @@ fn download_single_file(session: &mut Session, remote_file_path: &str) -> Result
     let mut local_file = File::create(&local_file_path)
         .map_err(|e| format!("Failed to create local file at '{}': {}", local_file_path.display(), e))?;
 
-    let mut buffer = [0; 1024]; // Buffer for holding file chunks
+    let mut buffer = [0; CHUNK_SIZE]; // Buffer for holding file chunks
+    let mut total_bytes_read = 0;
     while let Ok(n) = remote_file.read(&mut buffer) {
         if n == 0 {
             break;
         }
         local_file.write_all(&buffer[..n])
             .map_err(|e| format!("Failed to write to local file at '{}': {}", local_file_path.display(), e))?;
+        total_bytes_read += n as u64;
+        // Emit progress event
+        app_handle.emit_all("download-progress", total_bytes_read).unwrap();
     }
 
     remote_file.close().map_err(|e| format!("Failed to close remote file '{}': {}", remote_file_path, e))?;
@@ -228,24 +266,34 @@ fn download_single_file(session: &mut Session, remote_file_path: &str) -> Result
 
 /// Downloads multiple files from the Raspberry Pi as a zip file.
 /// 
-/// * `Input`: SSH session, remote directory, and list of file names
+/// * `Input`: SSH session, remote directory, list of file names, and app handle for emitting events
 /// * `Output`: None
-fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Vec<String>) -> Result<(), String> {
+fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Vec<String>, app_handle: &AppHandle) -> Result<(), String> {
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Failed to create temporary directory: {}", e))?;
     let zip_path = tmp_dir.path().join("files.zip");
     let zip_file = File::create(&zip_path).map_err(|e| format!("Failed to create zip file: {}", e))?;
     let mut zip = ZipWriter::new(zip_file);
 
+    // Calculate total size
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let mut total_size = 0;
+    for file_name in &file_names {
+        let remote_file_path = format!("{}/{}", remote_dir, file_name);
+        let file_stat = sftp.stat(Path::new(&remote_file_path))
+            .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
+        total_size += file_stat.size.unwrap_or(0);
+    }
+    app_handle.emit_all("total-size", total_size).unwrap();
+
     for file_name in file_names {
         let remote_file_path = format!("{}/{}", remote_dir, file_name);
-        let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
         let file_stat = sftp.stat(Path::new(&remote_file_path))
             .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
 
         if file_stat.is_file() {
-            add_file_to_zip(session, &mut zip, &remote_file_path, &file_name)?;
+            add_file_to_zip(session, &mut zip, &remote_file_path, &file_name, app_handle)?;
         } else if file_stat.is_dir() {
-            add_directory_to_zip(session, &mut zip, &remote_file_path, &file_name)?;
+            add_directory_to_zip(session, &mut zip, &remote_file_path, &file_name, app_handle)?;
         }
     }
 
@@ -264,25 +312,35 @@ fn download_files_as_zip(session: &mut Session, remote_dir: &str, file_names: Ve
     Ok(())
 }
 
+
 /// Adds a file to the zip archive.
 /// 
 /// * `Input`: SSH session, zip writer, remote file path, and file name
 /// * `Output`: None
-fn add_file_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_file_path: &str, file_name: &str) -> Result<(), String> {
-    let mut remote_file = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?
-        .open(Path::new(remote_file_path))
+fn add_file_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_file_path: &str, file_name: &str, app_handle: &AppHandle) -> Result<(), String> {
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let file_stat = sftp.stat(Path::new(remote_file_path))
+        .map_err(|e| format!("Failed to stat remote file '{}': {}", remote_file_path, e))?;
+    let total_size = file_stat.size.ok_or("Failed to get file size")?;
+    app_handle.emit_all("total-size", total_size).unwrap();
+
+    let mut remote_file = sftp.open(Path::new(remote_file_path))
         .map_err(|e| format!("Failed to open remote file '{}': {}", remote_file_path, e))?;
 
     zip.start_file::<&str, (), &str>(file_name, FileOptions::default())
         .map_err(|e| format!("Failed to add file to zip: {}", e))?;
 
-    let mut buffer = [0; 1024]; // Buffer for holding file chunks
+    let mut buffer = [0; CHUNK_SIZE]; // Buffer for holding file chunks
+    let mut total_bytes_read = 0;
     while let Ok(n) = remote_file.read(&mut buffer) {
         if n == 0 {
             break;
         }
         zip.write_all(&buffer[..n])
             .map_err(|e| format!("Failed to write to zip: {}", e))?;
+        total_bytes_read += n as u64;
+        // Emit progress event
+        app_handle.emit_all("zip-progress", total_bytes_read).unwrap();
     }
 
     Ok(())
@@ -292,10 +350,14 @@ fn add_file_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_file
 /// 
 /// * `Input`: SSH session, zip writer, remote directory path, and directory name
 /// * `Output`: None
-fn add_directory_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_dir_path: &str, dir_name: &str) -> Result<(), String> {
+fn add_directory_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote_dir_path: &str, dir_name: &str, app_handle: &AppHandle) -> Result<(), String> {
     let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
     let entries = sftp.readdir(Path::new(remote_dir_path))
         .map_err(|e| format!("Failed to read directory '{}': {}", remote_dir_path, e))?;
+    
+    // Calculate total size of the directory
+    let total_size: u64 = entries.iter().map(|(_, stat)| stat.size.unwrap_or(0)).sum();
+    app_handle.emit_all("total-size", total_size).unwrap();
 
     for (path, stat) in entries {
         let file_name = path.file_name().ok_or_else(|| format!("Failed to get file name in directory '{}'", remote_dir_path))?
@@ -304,11 +366,44 @@ fn add_directory_to_zip(session: &mut Session, zip: &mut ZipWriter<File>, remote
         let zip_file_name = format!("{}/{}", dir_name, file_name);
 
         if stat.is_file() {
-            add_file_to_zip(session, zip, &full_remote_path, &zip_file_name)?;
+            add_file_to_zip(session, zip, &full_remote_path, &zip_file_name, app_handle)?;
         } else if stat.is_dir() {
-            add_directory_to_zip(session, zip, &full_remote_path, &zip_file_name)?;
+            add_directory_to_zip(session, zip, &full_remote_path, &zip_file_name, app_handle)?;
         }
     }
+
+    Ok(())
+}
+
+/// Uploads a file to the Raspberry Pi in chunks to avoid memory issues.
+/// * `Input`: SSH session, remote file path, local file path, and app handle for emitting events
+/// * `Output`: None
+fn upload_file_in_chunks(session: &mut Session, remote_file_path: &str, local_file_path: &Path, app_handle: &AppHandle) -> Result<(), String> {
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    let mut remote_file = sftp.create(Path::new(remote_file_path))
+        .map_err(|e| format!("Failed to create remote file '{}': {}", remote_file_path, e))?;
+
+    let mut local_file = File::open(local_file_path)
+        .map_err(|e| format!("Failed to open local file '{}': {}", local_file_path.display(), e))?;
+
+    let file_size = local_file.metadata().map_err(|e| format!("Failed to get file metadata '{}': {}", local_file_path.display(), e))?.len();
+    app_handle.emit_all("total-size", file_size).unwrap();
+
+    let mut buffer = vec![0; CHUNK_SIZE];
+    let mut total_bytes_written = 0;
+
+    loop {
+        let n = local_file.read(&mut buffer).map_err(|e| format!("Failed to read from local file '{}': {}", local_file_path.display(), e))?;
+        if n == 0 {
+            break;
+        }
+        remote_file.write_all(&buffer[..n])
+            .map_err(|e| format!("Failed to write to remote file '{}': {}", remote_file_path, e))?;
+        total_bytes_written += n as u64;
+        app_handle.emit_all("upload-progress", total_bytes_written).unwrap();
+    }
+
+    remote_file.close().map_err(|e| format!("Failed to close remote file '{}': {}", remote_file_path, e))?;
 
     Ok(())
 }

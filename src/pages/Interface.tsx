@@ -4,11 +4,13 @@ import { Container, Box, Loader, ScrollArea, Table, Group, Breadcrumbs, Anchor }
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
-import { IoMdCloudDownload, IoMdRefresh } from 'react-icons/io';
+import { IoMdCloudDownload, IoMdCloudUpload, IoMdRefresh } from 'react-icons/io';
 import { notifications } from '@mantine/notifications';
 import { IoAlertCircle, IoCheckmarkCircle } from 'react-icons/io5';
 import { Button } from '@nextui-org/react';
 import { FileInfo, User } from '../interfaces';
+import DownloadProgress from '../components/DownloadProgress';
+import { open } from '@tauri-apps/api/dialog';
 
 /**
  * Interface page component.
@@ -22,8 +24,10 @@ const Interface: React.FC = (): JSX.Element => {
     const [files, setFiles] = useState<FileInfo[]>([]);         // Initialize the files state
     const [currentPath, setCurrentPath] = useState<string[]>([]); // Initialize the current path state
     const [loading, setLoading] = useState(true);               // Initialize the loading state
+    const [isUploading, setIsUploading] = useState(false);      // Initialize the isUploading state
     const [error, setError] = useState<string | null>(null);    // Initialize the error state
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // Initialize the selected files state
+    const [isDownloading, setIsDownloading] = useState(false);  // Initialize the isDownloading state
 
     // Fetch the files from the Raspberry Pi
     const fetchFilesCallback = useCallback((path: string[]) => {
@@ -37,26 +41,63 @@ const Interface: React.FC = (): JSX.Element => {
 
     // Handle the download of selected files
     const handleDownload = () => {
+        setIsDownloading(true);
         const fileNames = Array.from(selectedFiles);
         invoke('download_files', { userName: user.name.toLowerCase(), currentPath, fileNames })
-            .then(() => {
-                notifications.show({
-                    message: `Files downloaded successfully!`,
-                    icon: <IoCheckmarkCircle />,
-                    autoClose: 5000,
-                    color: 'green'
-                });
-            })
-            .catch(err => {
-                console.error('Failed to download files:', err);
-                notifications.show({
-                    message: `Failed to download files: ${err}`,
-                    icon: <IoAlertCircle />,
-                    autoClose: 5000,
-                    color: 'red'
-                });
+          .then(() => {
+            notifications.show({
+              message: `Files downloaded successfully!`,
+              icon: <IoCheckmarkCircle />,
+              autoClose: 5000,
+              color: 'green'
             });
-    };    
+            setIsDownloading(false);
+          })
+          .catch(err => {
+            console.error('Failed to download files:', err);
+            notifications.show({
+              message: `Failed to download files: ${err}`,
+              icon: <IoAlertCircle />,
+              autoClose: 5000,
+              color: 'red'
+            });
+            setIsDownloading(false);
+          });
+      };   
+
+    // Handle file upload
+    const handleUpload = async () => {
+        const selectedFiles = await open({
+            multiple: true,
+            directory: false,
+        }) as string[]; // Allow multiple file selection
+
+        if (selectedFiles && selectedFiles.length > 0) {
+            console.log('Selected files:', selectedFiles);
+            setIsUploading(true);
+            invoke('upload_files', { userName: user.name.toLowerCase(), currentPath, localFilePaths: selectedFiles })
+                .then(() => {
+                    notifications.show({
+                        message: `Files uploaded successfully!`,
+                        icon: <IoCheckmarkCircle />,
+                        autoClose: 5000,
+                        color: 'green'
+                    });
+                    setIsUploading(false);
+                    fetchFilesCallback(currentPath);
+                })
+                .catch(err => {
+                    console.error('Failed to upload files:', err);
+                    notifications.show({
+                        message: `Failed to upload files: ${err}`,
+                        icon: <IoAlertCircle />,
+                        autoClose: 5000,
+                        color: 'red'
+                    });
+                    setIsUploading(false);
+                });
+        }
+    };
 
     // Handle row click to select/deselect
     const handleRowClick = (fileName: string) => {
@@ -93,6 +134,7 @@ const Interface: React.FC = (): JSX.Element => {
             style={{
                 height: '100vh',
                 background: 'linear-gradient(45deg, #0F2027, #2C5364)',
+                overflow: 'auto',
             }}
         >
             <InterfaceHeader user={user} />
@@ -127,6 +169,17 @@ const Interface: React.FC = (): JSX.Element => {
                         Download Selected
                         <IoMdCloudDownload size={22} style={{ marginLeft: '4px' }} />
                     </Button>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleUpload}
+                    >
+                        Upload Files
+                        <IoMdCloudUpload size={22} style={{ marginLeft: '4px' }} />
+                    </Button>
+                    {isUploading && <><Loader color="blue" type="dots" size={30} /><DownloadProgress show={isDownloading} /></>}
                 </Group>
                 <Breadcrumbs style={{marginBottom: '4px'}}>
                     <Anchor onClick={() => handleBreadcrumbClick(-1)}>{user.name}</Anchor>

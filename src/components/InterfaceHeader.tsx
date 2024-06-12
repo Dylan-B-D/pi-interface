@@ -20,9 +20,10 @@ const InterfaceHeader: React.FC<InterfaceHeaderProps> = ({ user }: InterfaceHead
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem 1rem',
-                background: 'rgba(0, 0, 0, 0.5)',
+                background: '#112229',
                 position: 'sticky',
                 top: 0,
+                zIndex: 1000
             }}
         >
             <Title order={4} style={{ color: 'white' }}>{user ? user.name : 'No user logged in'}</Title>
