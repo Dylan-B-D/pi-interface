@@ -15,7 +15,7 @@ pub struct FileInfo {
     pub last_modified: String,
 }
 
-const CHUNK_SIZE: usize = 10 * 1024 * 1024; // 10MB
+const CHUNK_SIZE: usize = 1 * 1024 * 1024; // 1MB
 
 //================================================================================================
 //                              Commands for SSH connection
@@ -129,6 +129,66 @@ pub async fn upload_files(user_name: String, current_path: Vec<String>, local_fi
     Ok(())
 }
 
+/// Command to create a new folder in the current directory.
+/// * `Input`: User's name, current path, folder name
+/// * `Output`: None
+#[command]
+pub async fn create_folder(user_name: String, current_path: Vec<String>, folder_name: String) -> Result<(), String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    let remote_folder_path = format!("{}/{}", current_remote_dir, folder_name);
+
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    sftp.mkdir(Path::new(&remote_folder_path), 0o755).map_err(|e| format!("Failed to create folder '{}': {}", remote_folder_path, e))?;
+
+    Ok(())
+}
+
+/// Command to rename a file or folder in the current directory.
+/// * `Input`: User's name, current path, old name, new name
+/// * `Output`: None
+#[command]
+pub async fn rename_file(user_name: String, current_path: Vec<String>, old_name: String, new_name: String) -> Result<(), String> {
+    dotenv::dotenv().ok();
+
+    // Load environment variables
+    let pi_ip = env::var("VITE_PI_IP").map_err(|e| format!("Failed to load VITE_PI_IP: {}", e))?;
+    let pi_username = env::var("VITE_PI_USERNAME").map_err(|e| format!("Failed to load VITE_PI_USERNAME: {}", e))?;
+    let pi_password = env::var("VITE_PI_PASSWORD").map_err(|e| format!("Failed to load VITE_PI_PASSWORD: {}", e))?;
+
+    let mut session = establish_ssh_session(pi_ip, pi_username, pi_password)?;
+    let home_dir = get_home_directory(&mut session)?;
+    let remote_dir = format!("{}/{}/{}", home_dir, "pi-interface", user_name);
+    let current_remote_dir = if current_path.is_empty() {
+        remote_dir.clone()
+    } else {
+        format!("{}/{}", remote_dir, current_path.join("/"))
+    };
+
+    let old_file_path = format!("{}/{}", current_remote_dir, old_name);
+    let new_file_path = format!("{}/{}", current_remote_dir, new_name);
+
+    let sftp = session.sftp().map_err(|e| format!("Failed to create SFTP session: {}", e))?;
+    sftp.rename(Path::new(&old_file_path), Path::new(&new_file_path), None)
+        .map_err(|e| format!("Failed to rename '{}': {}", old_file_path, e))?;
+
+    Ok(())
+}
+
 //================================================================================================
 //                              Helper functions for SSH connection
 //================================================================================================
@@ -211,7 +271,7 @@ fn list_files_in_directory(session: &mut Session, remote_dir: &str) -> Result<Ve
                 path.extension()
                     .map_or_else(|| "Unknown".to_string(), |ext| ext.to_string_lossy().into_owned())
             } else {
-                "Directory".to_string()
+                "Folder".to_string()
             };
             files.push(FileInfo {
                 name: file_name.to_string_lossy().to_string(),

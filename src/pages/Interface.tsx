@@ -1,16 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Container, Box, Loader, ScrollArea, Table, Group, Breadcrumbs, Anchor } from '@mantine/core';
+import { Container, Box, Loader, ScrollArea, Table, Group, Anchor, Modal, TextInput } from '@mantine/core';
 import { invoke } from '@tauri-apps/api/tauri';
 import InterfaceHeader from '../components/InterfaceHeader';
 import { fetchFiles, formatDate, formatFileSize, getIconByFileExtension } from '../utils';
 import { IoMdCloudDownload, IoMdCloudUpload, IoMdRefresh } from 'react-icons/io';
 import { notifications } from '@mantine/notifications';
-import { IoAlertCircle, IoCheckmarkCircle } from 'react-icons/io5';
-import { Button } from '@nextui-org/react';
+import { IoAdd, IoAlertCircle, IoCheckmarkCircle } from 'react-icons/io5';
+import { BreadcrumbItem, Breadcrumbs, Button } from '@nextui-org/react';
 import { FileInfo, User } from '../interfaces';
 import DownloadProgress from '../components/DownloadProgress';
 import { open } from '@tauri-apps/api/dialog';
+import { MdDeleteForever, MdEdit } from "react-icons/md";
 
 /**
  * Interface page component.
@@ -28,6 +29,10 @@ const Interface: React.FC = (): JSX.Element => {
     const [error, setError] = useState<string | null>(null);    // Initialize the error state
     const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set()); // Initialize the selected files state
     const [isDownloading, setIsDownloading] = useState(false);  // Initialize the isDownloading state
+    const [isAddFolderOpen, setIsAddFolderOpen] = useState(false); // State for handling the add folder modal
+    const [newFolderName, setNewFolderName] = useState('');     // State for the new folder name
+    const [isRenameOpen, setIsRenameOpen] = useState(false);    // State for handling the rename modal
+    const [newFileName, setNewFileName] = useState('');         // State for the new file name
 
     // Fetch the files from the Raspberry Pi
     const fetchFilesCallback = useCallback((path: string[]) => {
@@ -99,6 +104,89 @@ const Interface: React.FC = (): JSX.Element => {
         }
     };
 
+    // Handle adding a new folder
+    const handleAddFolder = () => {
+        setIsAddFolderOpen(true);
+    };
+
+    const handleCreateFolder = () => {
+        if (newFolderName.trim() === '') {
+            notifications.show({
+                message: `Folder name cannot be empty`,
+                icon: <IoAlertCircle />,
+                autoClose: 5000,
+                color: 'red'
+            });
+            return;
+        }
+
+        invoke('create_folder', { userName: user.name.toLowerCase(), currentPath, folderName: newFolderName })
+            .then(() => {
+                notifications.show({
+                    message: `Folder created successfully!`,
+                    icon: <IoCheckmarkCircle />,
+                    autoClose: 5000,
+                    color: 'green'
+                });
+                setIsAddFolderOpen(false);
+                setNewFolderName('');
+                fetchFilesCallback(currentPath);
+            })
+            .catch(err => {
+                console.error('Failed to create folder:', err);
+                notifications.show({
+                    message: `Failed to create folder: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+            });
+    };
+
+    // Handle renaming a file
+    const handleRename = () => {
+        const selectedFile = Array.from(selectedFiles)[0];
+        setNewFileName(selectedFile);
+        setIsRenameOpen(true);
+    };
+
+    const handleRenameFile = () => {
+        if (newFileName.trim() === '') {
+            notifications.show({
+                message: `File name cannot be empty`,
+                icon: <IoAlertCircle />,
+                autoClose: 5000,
+                color: 'red'
+            });
+            return;
+        }
+
+        const selectedFile = Array.from(selectedFiles)[0];
+
+        invoke('rename_file', { userName: user.name.toLowerCase(), currentPath, oldName: selectedFile, newName: newFileName })
+            .then(() => {
+                notifications.show({
+                    message: `File renamed successfully!`,
+                    icon: <IoCheckmarkCircle />,
+                    autoClose: 5000,
+                    color: 'green'
+                });
+                setIsRenameOpen(false);
+                setNewFileName('');
+                fetchFilesCallback(currentPath);
+                setSelectedFiles(new Set());
+            })
+            .catch(err => {
+                console.error('Failed to rename file:', err);
+                notifications.show({
+                    message: `Failed to rename file: ${err}`,
+                    icon: <IoAlertCircle />,
+                    autoClose: 5000,
+                    color: 'red'
+                });
+            });
+    };
+
     // Handle row click to select/deselect
     const handleRowClick = (fileName: string) => {
         setSelectedFiles(prevSelectedFiles => {
@@ -115,7 +203,7 @@ const Interface: React.FC = (): JSX.Element => {
     // Handle double click to navigate into folder
     const handleDoubleClick = (fileName: string) => {
         const file = files.find(f => f.name === fileName);
-        if (file && file.file_type === 'Directory') {
+        if (file && file.file_type === 'Folder') {
             setCurrentPath([...currentPath, fileName]);
             setSelectedFiles(new Set()); // Clear the selected files
         }
@@ -146,8 +234,8 @@ const Interface: React.FC = (): JSX.Element => {
                     flexDirection: 'column',
                 }}
             >
-                <Group mb="md" gap={4}>
-                    <Button
+                <Group mb="4px" gap={4}>
+                <Button
                         size='sm'
                         color="primary"
                         variant='flat'
@@ -156,6 +244,27 @@ const Interface: React.FC = (): JSX.Element => {
                         onClick={() => fetchFilesCallback(currentPath)}
                     >
                         <IoMdRefresh size={22} />
+                    </Button>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleAddFolder}
+                    >
+                        Add Folder
+                        <IoAdd size={22} style={{ marginLeft: '4px' }} />
+                    </Button>
+                    <Button
+                        size='sm'
+                        color="primary"
+                        variant='flat'
+                        radius='none'
+                        isDisabled={selectedFiles.size !== 1}
+                        onClick={handleRename}
+                    >
+                        Rename
+                        <MdEdit size={22} style={{ marginLeft: '4px' }} />
                     </Button>
                     <Button
                         size='sm'
@@ -179,14 +288,28 @@ const Interface: React.FC = (): JSX.Element => {
                         Upload Files
                         <IoMdCloudUpload size={22} style={{ marginLeft: '4px' }} />
                     </Button>
-                    {isUploading && <><Loader color="blue" type="dots" size={30} /><DownloadProgress show={isDownloading} /></>}
+                    <Button
+                        size='sm'
+                        color="danger"
+                        variant='ghost'
+                        radius='none'
+                        // onClick={handleDelete}
+                    >
+                        Delete
+                        <MdDeleteForever size={22} style={{ marginLeft: '4px' }} />
+                    </Button>
+                    
                 </Group>
-                <Breadcrumbs style={{marginBottom: '4px'}}>
-                    <Anchor onClick={() => handleBreadcrumbClick(-1)}>{user.name}</Anchor>
+                <Group mb="xs" gap={4}>   
+                    {isUploading && <><Loader color="blue" type="dots" size={30} /></>}
+                    <DownloadProgress show={isDownloading} />
+                </Group>
+                <Breadcrumbs color="primary" style={{ marginBottom: '12px' }}>
+                    <BreadcrumbItem onClick={() => handleBreadcrumbClick(-1)}>Home</BreadcrumbItem>
                     {currentPath.map((folder, index) => (
-                        <Anchor key={index} onClick={() => handleBreadcrumbClick(index)}>
+                        <BreadcrumbItem key={index} onClick={() => handleBreadcrumbClick(index)}>
                             {folder}
-                        </Anchor>
+                        </BreadcrumbItem>
                     ))}
                 </Breadcrumbs>
                 {loading ? (
@@ -212,7 +335,7 @@ const Interface: React.FC = (): JSX.Element => {
 
                                         // Remove the extension from the file name
                                         const [name, extension] = file.name.split('.');
-                                        const icon = file.file_type !== 'Directory' ? getIconByFileExtension(extension) : '📁';
+                                        const icon = file.file_type !== 'Folder' ? getIconByFileExtension(extension) : '📁';
                                         const displayName = `${icon} ${name}`;
 
                                         return (
@@ -228,7 +351,9 @@ const Interface: React.FC = (): JSX.Element => {
                                                 <Table.Td style={{ color: 'white' }}>{displayName}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{formatDate(Number(file.last_modified))}</Table.Td>
                                                 <Table.Td style={{ color: 'white' }}>{file.file_type}</Table.Td>
-                                                <Table.Td style={{ color: 'white' }}>{formatFileSize(file.size)}</Table.Td>
+                                                <Table.Td style={{ color: 'white' }}>
+                                                {file.file_type !== 'Folder' ? formatFileSize(file.size) : ''}
+                                                </Table.Td>
                                             </Table.Tr>
                                         );
                                     })}
@@ -238,6 +363,56 @@ const Interface: React.FC = (): JSX.Element => {
                     </ScrollArea>
                 )}
             </Container>
+            <Modal
+                opened={isAddFolderOpen}
+                onClose={() => setIsAddFolderOpen(false)}
+                title="Create New Folder"
+                centered
+                radius={0}
+            >
+                <TextInput
+                    placeholder="Enter folder name"
+                    value={newFolderName}
+                    radius={0}
+                    onChange={(event) => setNewFolderName(event.currentTarget.value)}
+                />
+                <Group mt="md">
+                <Button
+                    size='sm'
+                    color="success"
+                    variant='flat'
+                    radius='none'
+                    onClick={handleCreateFolder}
+                    >
+                    Create
+                </Button>
+                </Group>
+            </Modal>
+            <Modal
+                opened={isRenameOpen}
+                onClose={() => setIsRenameOpen(false)}
+                title="Rename File or Folder"
+                centered
+                radius={0}
+            >
+                <TextInput
+                    placeholder="Enter new name"
+                    value={newFileName}
+                    radius={0}
+                    onChange={(event) => setNewFileName(event.currentTarget.value)}
+                />
+                <Group mt="md">
+                    <Button
+                        size='sm'
+                        color="success"
+                        variant='flat'
+                        radius='none'
+                        onClick={handleRenameFile}
+                    >
+                        Rename
+                    </Button>
+                </Group>
+            </Modal>
         </Container>
     );
 };
